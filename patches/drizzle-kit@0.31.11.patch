@@ -1,0 +1,24 @@
+diff --git a/bin.cjs b/bin.cjs
+index c28f3e4732f0d911237dc1eb1bc466cefaa1b976..0e573f8d94fd04843bf073c08f2cb97a6404cc0a 100755
+--- a/bin.cjs
++++ b/bin.cjs
+@@ -90061,7 +90061,18 @@ var init_studio2 = __esm({
+         await next();
+         ctx.header("Access-Control-Allow-Private-Network", "true");
+       });
+-      app.use(cors());
++      // atelier-store patch (CWE-942): only the hosted Studio UI may call this
++      // unauthenticated SQL endpoint from a browser. Browsers always send Origin
++      // on cross-origin requests, so any other origin is rejected outright.
++      const STUDIO_ORIGIN = "https://local.drizzle.studio";
++      app.use(async (ctx, next) => {
++        const origin = ctx.req.header("origin");
++        if (origin && origin !== STUDIO_ORIGIN) {
++          return ctx.text("Forbidden origin", 403);
++        }
++        await next();
++      });
++      app.use(cors({ origin: STUDIO_ORIGIN }));
+       app.onError((err2, ctx) => {
+         console.error(err2);
+         return ctx.json({

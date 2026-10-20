@@ -53,6 +53,10 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 - **Types:** shared shapes live in `src/lib/catalog-types.ts`, and client components import types from there.
 - **Seed:** `src/db/seed.ts` must stay idempotent, upserting by natural keys. When the catalogue structure changes, update `src/db/seed-data.ts` to match.
 - **Build:** `next build` reads product slugs from the database, so the database must be reachable at build time.
+- **Drizzle Studio:**
+  - Studio exposes an unauthenticated SQL endpoint with wildcard CORS (CWE-942), and no release fixes it yet.
+  - `patches/drizzle-kit@0.31.11.patch` (registered in `pnpm-workspace.yaml`) limits it to the `https://local.drizzle.studio` origin.
+  - Use pnpm only; npm would install drizzle-kit without the patch. When upgrading drizzle-kit, redo the patch, and drop it once upstream fixes the issue.
 
 ## Architecture
 
@@ -65,4 +69,4 @@ The request path for auth is: `authClient` (`src/lib/auth-client.ts`, browser) â
 
 ## Environment
 
-Copy `.env.example` to `.env.local`. `drizzle.config.ts` loads `.env.local` explicitly via dotenv; the app gets it from Next.js. Variables: `DATABASE_URL` (Neon pooled connection string), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL` (used by the auth client). `.gitignore` ignores `.env*` except `.env.example`.
+Copy `.env.example` to `.env.local`. `drizzle.config.ts` loads `.env.local` explicitly via dotenv; the app gets it from Next.js. Variables: `DATABASE_URL` (Neon pooled connection string), `STUDIO_DATABASE_URL` (used only by `db:studio`; a Neon dev branch or limited role, never production, and Studio refuses to start without it), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL` (used by the auth client). `.gitignore` ignores `.env*` except `.env.example`.

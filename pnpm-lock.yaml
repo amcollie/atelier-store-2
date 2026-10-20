@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  drizzle-kit@0.31.11: 277f4586064f8884d2278d27f0ebc336dc482a78687096f5c0bfd90dcf2ad25c
+
 importers:
 
   .:
@@ -13,7 +16,7 @@ importers:
         version: 1.2.0
       better-auth:
         specifier: ^1.7.10
-        version: 1.7.10(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@neondatabase/serverless@1.2.0)(kysely@0.29.6))(next@16.4.1(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.7.10(drizzle-kit@0.31.11(patch_hash=277f4586064f8884d2278d27f0ebc336dc482a78687096f5c0bfd90dcf2ad25c))(drizzle-orm@0.45.4(@neondatabase/serverless@1.2.0)(kysely@0.29.6))(next@16.4.1(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@neondatabase/serverless@1.2.0)(kysely@0.29.6)
@@ -44,7 +47,7 @@ importers:
         version: 18.0.8
       drizzle-kit:
         specifier: ^0.31.11
-        version: 0.31.11
+        version: 0.31.11(patch_hash=277f4586064f8884d2278d27f0ebc336dc482a78687096f5c0bfd90dcf2ad25c)
       eslint:
         specifier: ^9
         version: 9.39.5(jiti@2.7.0)(supports-color@7.2.0)
@@ -3831,7 +3834,7 @@ snapshots:
 
   baseline-browser-mapping@2.11.29: {}
 
-  better-auth@1.7.10(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@neondatabase/serverless@1.2.0)(kysely@0.29.6))(next@16.4.1(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  better-auth@1.7.10(drizzle-kit@0.31.11(patch_hash=277f4586064f8884d2278d27f0ebc336dc482a78687096f5c0bfd90dcf2ad25c))(drizzle-orm@0.45.4(@neondatabase/serverless@1.2.0)(kysely@0.29.6))(next@16.4.1(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       '@better-auth/core': 1.7.10(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(better-call@1.4.2(zod@4.6.7))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.5)
       '@better-auth/drizzle-adapter': 1.7.10(@better-auth/core@1.7.10(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(better-call@1.4.2(zod@4.6.7))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.5))(@better-auth/utils@0.5.0)(drizzle-orm@0.45.4(@neondatabase/serverless@1.2.0)(kysely@0.29.6))
@@ -3851,7 +3854,7 @@ snapshots:
       nanostores: 1.5.5
       zod: 4.6.7
     optionalDependencies:
-      drizzle-kit: 0.31.11
+      drizzle-kit: 0.31.11(patch_hash=277f4586064f8884d2278d27f0ebc336dc482a78687096f5c0bfd90dcf2ad25c)
       drizzle-orm: 0.45.4(@neondatabase/serverless@1.2.0)(kysely@0.29.6)
       next: 16.4.1(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react: 19.3.0
@@ -3993,7 +3996,7 @@ snapshots:
 
   dotenv@18.0.8: {}
 
-  drizzle-kit@0.31.11:
+  drizzle-kit@0.31.11(patch_hash=277f4586064f8884d2278d27f0ebc336dc482a78687096f5c0bfd90dcf2ad25c):
     dependencies:
       '@drizzle-team/brocli': 0.10.2
       '@esbuild-kit/esm-loader': 2.6.5

@@ -1,3 +1,5 @@
 allowBuilds:
   esbuild: set this to true or false
   unrs-resolver: set this to true or false
+patchedDependencies:
+  drizzle-kit@0.31.11: patches/drizzle-kit@0.31.11.patch
