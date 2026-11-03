@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
-import { BagIcon, CloseIcon, MenuIcon, SearchIcon, UserIcon } from "@/components/icons";
+import { CloseIcon, MenuIcon, SearchIcon, UserIcon } from "@/components/icons";
 
 type NavItem = { label: string; href: string };
 
-export function SiteHeader({ navigation, bagCount = 0 }: { navigation: NavItem[]; bagCount?: number }) {
+/** `bag` is a server-rendered slot (the cart count reads a cookie, so it streams in Suspense). */
+export function SiteHeader({ navigation, bag }: { navigation: NavItem[]; bag: ReactNode }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -63,12 +64,7 @@ export function SiteHeader({ navigation, bagCount = 0 }: { navigation: NavItem[]
           <Link href="/account" className="btn btn-icon hidden sm:inline-flex" aria-label="Account">
             <UserIcon />
           </Link>
-          <Link href="/bag" className="btn btn-icon relative" aria-label={`Shopping bag, ${bagCount} items`}>
-            <BagIcon />
-            <span className="absolute top-1.5 right-1 text-micro font-bold tabular-nums" aria-hidden="true">
-              {bagCount > 0 ? bagCount : null}
-            </span>
-          </Link>
+          {bag}
         </div>
       </div>
 

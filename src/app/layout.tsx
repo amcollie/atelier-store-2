@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Albert_Sans } from "next/font/google";
+import { Suspense } from "react";
 
+import { BagLink, CartBagLink } from "@/components/cart-bag-link";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { navigation } from "@/lib/sample-data";
@@ -28,7 +30,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <p className="bg-ink py-2 text-center text-micro font-medium uppercase tracking-control text-paper">
           Complimentary shipping and returns on all orders
         </p>
-        <SiteHeader navigation={navigation} />
+        <SiteHeader
+          navigation={navigation}
+          bag={
+            <Suspense fallback={<BagLink count={0} />}>
+              <CartBagLink />
+            </Suspense>
+          }
+        />
         {children}
         <SiteFooter />
       </body>

@@ -33,7 +33,7 @@ Next.js 16.4 (App Router, `src/` dir), React 19, TypeScript, Tailwind CSS v4, Be
 
 All tokens and primitives live in `src/app/globals.css`; there is no `tailwind.config`. Colours are runtime CSS variables on `:root`, mapped into Tailwind via `@theme inline`, so `.theme-inverse` re-scopes a subtree (footer, dark bands) by swapping the variables. Use semantic utilities (`bg-paper`, `text-ink`, `text-muted`, `border-line`, `text-caption`, `heading-*`, `eyebrow`, `container-page`, `grid-products`, `media-frame`) rather than raw colours or Tailwind's default palette. Buttons/links/fields are component classes (`btn btn-primary`, `link`, `field`). Corners are square everywhere. Breakpoints: `md` 768, `lg` 1024, `xl` 1440.
 
-Products come from Postgres through `src/lib/catalog.ts` (see Database conventions below). Marketing content (navigation, hero, collections, editorial, services) is still placeholder data in `src/lib/sample-data.ts`. Unsplash images are allowed via `images.remotePatterns` in `next.config.ts`; gallery "detail" shots are focal-point crops of the same photo. The announcement bar, `SiteHeader` and `SiteFooter` are rendered once in `src/app/layout.tsx`; each page supplies its own `<main id="main" className="flex-1">`. Client components are kept to `SiteHeader`, `NewsletterForm`, `ProductPurchase` and `AuthForm`. Sample photos were checked for visible third-party logos; keep it that way when swapping images.
+Products come from Postgres through `src/lib/catalog.ts` (see Database conventions below). Marketing content (navigation, hero, collections, editorial, services) is still placeholder data in `src/lib/sample-data.ts`. Unsplash images are allowed via `images.remotePatterns` in `next.config.ts`; gallery "detail" shots are focal-point crops of the same photo. The announcement bar, `SiteHeader` and `SiteFooter` are rendered once in `src/app/layout.tsx`; each page supplies its own `<main id="main" className="flex-1">`. Client components are kept to `SiteHeader`, `NewsletterForm`, `ProductPurchase`, `AuthForm` and `BagLines`. `SiteHeader` takes the bag link as a server-rendered `bag` slot (`CartBagLink` in `<Suspense>`), because the count reads the cart cookie. Sample photos were checked for visible third-party logos; keep it that way when swapping images.
 
 With Cache Components on, product slugs come from `generateStaticParams`; an unknown slug renders `not-found.tsx` with a 200 status plus `noindex` (documented Next 16 behaviour; `dynamicParams` is unavailable).
 
@@ -41,7 +41,7 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 
 - **Migrations:** change the schema with `db:generate` + `db:migrate` and commit the SQL in `drizzle/`. Don't use `db:push` for real schema changes.
 - **Table definitions:** tables live in their own file under `src/db/` (catalogue: `catalog-schema.ts`) and are re-exported from `schema.ts`. Use integer identity primary keys, snake_case column names with camelCase TS keys, and `timestamptz` timestamps.
-- **Scope:** the v1 catalogue has only products, categories and stock (plus the generated auth tables; see Authentication). Don't add carts, orders, payments, reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
+- **Scope:** the v1 catalogue has only products, categories and stock (plus the generated auth tables; see Authentication). The cart lives in a cookie, not a table (see Cart). Don't add orders, payments, checkout, reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
 - **Category tree:**
   - It is two levels deep. The top categories are Women, Men and Unisex (`parent_id` null); every other category is a sub-category of one of them.
   - A product belongs to exactly one **sub-category**, never a top category. Items that fit both or neither go under Unisex.
@@ -58,6 +58,15 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
   - Studio exposes an unauthenticated SQL endpoint with wildcard CORS (CWE-942), and no release fixes it yet.
   - `patches/drizzle-kit@0.31.11.patch` (registered in `pnpm-workspace.yaml`) limits it to the `https://local.drizzle.studio` origin.
   - Use pnpm only; npm would install drizzle-kit without the patch. When upgrading drizzle-kit, redo the patch, and drop it once upstream fixes the issue.
+
+## Cart
+
+- **Storage:** an httpOnly `atelier_cart` cookie of `{ slug, size, qty }` references, capped at 20 lines and 99 per line. It never holds prices, names or stock, and it isn't tied to the account: it's per device and survives sign-in and sign-out.
+- **One module:** `src/lib/cart.ts` (`server-only`) is the only code that reads or writes the cookie. `getCart()` loads current price and stock with an uncached Drizzle query, never the cached catalogue reads, so call it inside `<Suspense>` or a server action. Shared types are in `src/lib/cart-types.ts`.
+- **Prices:** the client sends only slug, size and quantity. Prices, line totals and the subtotal (integer cents) are always computed on the server from the database.
+- **Stock:** `product_stock` is per product, so all sizes of one product share it. `resolveCart()` fills lines in cart order and clamps them to live stock; sold-out lines and sizes that are no longer available are flagged `unavailable` and left out of the subtotal. Rendering can't set cookies, so a clamped quantity is saved by the next cart action.
+- **Mutations:** `addToCart`, `updateQuantity` and `removeFromCart` in `src/app/bag/actions.ts`. Each re-reads the cookie, validates its input and re-checks stock before writing. Setting the cookie re-renders the route, which updates `/bag` and the header count.
+- **No checkout:** stock is not reserved, and there is no checkout or payment yet.
 
 ## Authentication
 

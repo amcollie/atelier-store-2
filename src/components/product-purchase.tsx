@@ -1,10 +1,14 @@
 "use client";
 
-import { useId, useState } from "react";
+import Link from "next/link";
+import { useActionState, useId, useState } from "react";
 
+import { addToCart } from "@/app/bag/actions";
+import type { CartActionState } from "@/lib/cart-types";
 import type { Product } from "@/lib/catalog-types";
 
-// Size selection and add-to-bag. Front-end only until the cart exists.
+// Size selection and add-to-bag. Sends only the slug, size and quantity; the
+// server action checks live stock and the price always comes from the database.
 export function ProductPurchase({ product }: { product: Product }) {
   const sizes = product.sizes ?? [];
   const soldOut = product.stock.status === "out_of_stock";
@@ -14,16 +18,25 @@ export function ProductPurchase({ product }: { product: Product }) {
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const groupId = useId();
 
-  const addToBag = () => {
-    if (sizes.length > 0 && !size) {
+  const [, action, pending] = useActionState<CartActionState, FormData>(async (prev, formData) => {
+    if (sizes.length > 1 && !size) {
       setMessage({ kind: "error", text: "Please select a size." });
-      return;
+      return prev;
     }
-    setMessage({ kind: "ok", text: `Added to your bag${size ? ` · Size ${size}` : ""}.` });
-  };
+    try {
+      const result = await addToCart(prev, formData);
+      setMessage(result.message ? { kind: result.status === "ok" ? "ok" : "error", text: result.message } : null);
+      return result;
+    } catch {
+      setMessage({ kind: "error", text: "We couldn't add that item. Check your connection and try again." });
+      return prev;
+    }
+  }, {});
 
   return (
-    <div className="stack gap-5">
+    <form action={action} className="stack gap-5">
+      <input type="hidden" name="slug" value={product.slug} />
+      <input type="hidden" name="size" value={size ?? ""} />
       {sizes.length > 1 && !soldOut ? (
         <fieldset className="stack gap-3">
           <legend className="mb-3 flex w-full items-center justify-between">
@@ -71,13 +84,14 @@ export function ProductPurchase({ product }: { product: Product }) {
         </fieldset>
       ) : null}
 
-      <button
-        type="button"
-        className="btn btn-primary btn-block"
-        disabled={soldOut}
-        onClick={addToBag}
-      >
-        {soldOut ? "Sold out" : "Add to bag"}
+      <button type="submit" className="btn btn-primary btn-block" disabled={soldOut || pending} aria-disabled={pending}>
+        {pending ? (
+          <span
+            aria-hidden="true"
+            className="size-3 animate-spin border border-current border-t-transparent motion-reduce:animate-none"
+          />
+        ) : null}
+        {soldOut ? "Sold out" : pending ? "Adding…" : "Add to bag"}
       </button>
 
       <p
@@ -85,7 +99,15 @@ export function ProductPurchase({ product }: { product: Product }) {
         className={`min-h-4 text-meta ${message?.kind === "error" ? "text-danger" : "text-ink"}`}
       >
         {message?.text}
+        {message?.kind === "ok" ? (
+          <>
+            {" "}
+            <Link href="/bag" className="link">
+              View bag
+            </Link>
+          </>
+        ) : null}
       </p>
-    </div>
+    </form>
   );
 }

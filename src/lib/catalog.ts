@@ -10,7 +10,7 @@ import type { CategoryRef, Product } from "@/lib/catalog-types";
 // Catalogue reads. Every query is cached under the "catalog" tag so pages stay
 // prerendered; call updateTag/revalidateTag("catalog") after changing data.
 
-const LOW_STOCK_THRESHOLD = 5;
+export const LOW_STOCK_THRESHOLD = 5;
 
 export const SHIPPING_COPY =
   "Complimentary standard shipping on every order, delivered in 2–4 business days. Returns are free within 30 days in original condition with tags attached.";
