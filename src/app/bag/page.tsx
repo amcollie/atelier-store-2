@@ -24,9 +24,14 @@ export default function BagPage() {
             <li aria-current="page">Shopping bag</li>
           </ol>
         </nav>
-        <h1 id="bag-title" tabIndex={-1} className="heading-display outline-none">
-          Shopping bag
-        </h1>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+          <h1 id="bag-title" tabIndex={-1} className="heading-display outline-none">
+            Shopping bag
+          </h1>
+          <Suspense fallback={null}>
+            <BagCount />
+          </Suspense>
+        </div>
       </header>
 
       <Suspense fallback={<BagSkeleton />}>
@@ -41,16 +46,40 @@ async function BagContents() {
 
   if (cart.lines.length === 0) {
     return (
-      <section className="section container-page flex flex-col items-center gap-5 border-t border-line text-center">
-        <p className="max-w-prose text-muted">Your bag is empty.</p>
-        <Link href="/arrivals" className="btn btn-primary">
-          Shop new arrivals
-        </Link>
+      <section
+        aria-labelledby="empty-title"
+        className="section container-page flex flex-col items-center gap-5 border-t border-line text-center"
+      >
+        <h2 id="empty-title" className="heading-title">
+          Your bag is empty
+        </h2>
+        <p className="max-w-prose text-muted">
+          Pieces you add will be kept here on this device for 30 days, whether or not you&rsquo;re signed in.
+        </p>
+        <div className="mt-2 flex flex-wrap justify-center gap-3">
+          <Link href="/arrivals" className="btn btn-primary">
+            Shop new arrivals
+          </Link>
+          <Link href="/" className="btn btn-secondary">
+            Return home
+          </Link>
+        </div>
       </section>
     );
   }
 
-  const changed = cart.lines.some((l) => l.issue);
+  const reduced = cart.lines.some((l) => l.issue === "reduced");
+  const excluded = cart.lines.filter((l) => l.qty === 0).length;
+  const notice = [
+    reduced ? "Some quantities were lowered to match what’s in stock." : null,
+    excluded > 0
+      ? excluded === 1
+        ? "One item is no longer available and isn’t included in your subtotal."
+        : `${excluded} items are no longer available and aren’t included in your subtotal.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="container-page pb-section">
@@ -59,10 +88,9 @@ async function BagContents() {
           <h2 id="bag-items-title" className="sr-only">
             Items
           </h2>
-          {changed ? (
+          {notice ? (
             <p className="mb-6 border-l-2 border-warning py-1 pl-4 text-meta text-warning" role="status">
-              Some items in your bag changed since you added them. We&rsquo;ve updated the quantities to what&rsquo;s
-              available.
+              {notice}
             </p>
           ) : null}
           <BagLines lines={cart.lines} />
@@ -85,6 +113,9 @@ async function BagContents() {
                 <dd>Complimentary</dd>
               </div>
             </dl>
+            {excluded > 0 ? (
+              <p className="text-meta text-muted">Unavailable items aren&rsquo;t included in the subtotal.</p>
+            ) : null}
             <p className="text-meta text-muted">{SHIPPING_COPY}</p>
             <button type="button" className="btn btn-primary btn-block" disabled>
               Checkout coming soon
@@ -96,6 +127,16 @@ async function BagContents() {
         </aside>
       </div>
     </div>
+  );
+}
+
+async function BagCount() {
+  const { count } = await getCart();
+  if (count === 0) return null;
+  return (
+    <p className="text-meta text-muted tabular-nums">
+      {count} {count === 1 ? "item" : "items"}
+    </p>
   );
 }
 

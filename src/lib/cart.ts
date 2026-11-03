@@ -2,10 +2,11 @@ import "server-only";
 
 import { inArray } from "drizzle-orm";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import { db } from "@/db";
 import { products } from "@/db/schema";
-import type { Cart, CartLine, CartRef } from "@/lib/cart-types";
+import type { Cart, CartIssue, CartLine, CartRef } from "@/lib/cart-types";
 import { LOW_STOCK_THRESHOLD } from "@/lib/catalog";
 import type { ProductSize } from "@/lib/catalog-types";
 
@@ -145,22 +146,25 @@ export function resolveCart(refs: CartRef[], live: Map<string, LiveProduct>): Ca
     if (!product) continue;
     const sized = resolveSize(product, ref.size);
     if (!sized.ok || sized.size !== ref.size) {
-      draft.push({ ref, product, qty: 0, issue: "unavailable" });
+      draft.push({ ref, product, qty: 0, issue: "size_unavailable" });
       continue;
     }
     const remaining = product.stock - (used.get(ref.slug) ?? 0);
     const qty = Math.max(0, Math.min(ref.qty, remaining, MAX_LINE_QTY));
     used.set(ref.slug, (used.get(ref.slug) ?? 0) + qty);
-    draft.push({ ref, product, qty, issue: qty === 0 ? "unavailable" : qty < ref.qty ? "reduced" : undefined });
+    const issue: CartIssue | undefined =
+      product.stock === 0 ? "sold_out" : qty === 0 ? "held_elsewhere" : qty < ref.qty ? "reduced" : undefined;
+    draft.push({ ref, product, qty, issue });
   }
 
   const lines: CartLine[] = draft.map(({ ref, product, qty, issue }) => {
     const free = product.stock - (used.get(ref.slug) ?? 0);
-    const maxQty = issue === "unavailable" ? 0 : Math.min(MAX_LINE_QTY, qty + Math.max(0, free));
+    const maxQty = qty === 0 ? 0 : Math.min(MAX_LINE_QTY, qty + Math.max(0, free));
     return {
       key: lineKey(ref.slug, ref.size),
       slug: ref.slug,
       size: ref.size,
+      sizeLabel: ref.size && (product.sizes?.length ?? 0) > 1 ? ref.size : undefined,
       name: product.name,
       href: `/products/${ref.slug}`,
       image: product.image,
@@ -180,8 +184,8 @@ export function resolveCart(refs: CartRef[], live: Map<string, LiveProduct>): Ca
   };
 }
 
-/** The current cart, resolved against live prices and stock. */
-export async function getCart(): Promise<Cart> {
+/** The current cart, resolved against live prices and stock. Cached per request (header and page share it). */
+export const getCart = cache(async (): Promise<Cart> => {
   const refs = await readCartRefs();
   return resolveCart(refs, await loadLiveProducts(refs.map((r) => r.slug)));
-}
+});

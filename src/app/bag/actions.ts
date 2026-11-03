@@ -47,7 +47,7 @@ function persistable(refs: CartRef[], cart: Cart): CartRef[] {
   return refs.flatMap((ref) => {
     const line = lines.get(lineKey(ref.slug, ref.size));
     if (!line) return [];
-    return [line.issue === "unavailable" ? ref : { ...ref, qty: line.qty }];
+    return [line.qty === 0 ? ref : { ...ref, qty: line.qty }];
   });
 }
 
@@ -67,7 +67,7 @@ export async function addToCart(_prev: CartActionState, formData: FormData): Pro
 
   const cart = resolveCart(refs, live);
   const key = lineKey(product.slug, sized.size);
-  const existing = cart.lines.find((l) => l.key === key && l.issue !== "unavailable");
+  const existing = cart.lines.find((l) => l.key === key && l.qty > 0);
   const inBag = cart.lines.filter((l) => l.slug === product.slug).reduce((n, l) => n + l.qty, 0);
   const available = product.stock - inBag;
 
@@ -110,7 +110,7 @@ export async function updateQuantity(_prev: CartActionState, formData: FormData)
   const key = lineKey(input.slug, input.size);
   const line = cart.lines.find((l) => l.key === key);
   if (!line) return error("This item is no longer in your bag.");
-  if (line.issue === "unavailable") return error("This item is unavailable. Remove it from your bag.");
+  if (line.qty === 0) return error("This item is unavailable. Remove it from your bag.");
 
   const nextQty = Math.min(qty, line.maxQty);
   await writeCartRefs(

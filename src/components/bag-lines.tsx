@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { type MouseEvent, useActionState, useState } from "react";
 
 import { removeFromCart, updateQuantity } from "@/app/bag/actions";
+import { StockStatus } from "@/components/stock-status";
 import type { CartActionState, CartLine } from "@/lib/cart-types";
 import { formatPrice } from "@/lib/sample-data";
 
@@ -13,58 +14,78 @@ import { formatPrice } from "@/lib/sample-data";
 // prices and subtotal, then re-renders the page. The status region lives here,
 // not in a row, so "Item removed" is still announced after the row unmounts.
 
-type Status = { kind: "ok" | "error"; text: string } | null;
+type Note = { kind: "warning" | "error"; text: string } | null;
 
 export function BagLines({ lines }: { lines: CartLine[] }) {
-  const [status, setStatus] = useState<Status>(null);
+  const [status, setStatus] = useState("");
 
   return (
     <>
       <ul className="divide-y divide-line border-y border-line">
         {lines.map((line) => (
-          <BagLineRow key={line.key} line={line} onResult={setStatus} />
+          <BagLineRow key={line.key} line={line} onAnnounce={setStatus} />
         ))}
       </ul>
       <p className="sr-only" role="status" aria-live="polite">
-        {status?.text}
+        {status}
       </p>
     </>
   );
 }
 
-function BagLineRow({ line, onResult }: { line: CartLine; onResult: (s: Status) => void }) {
-  const [rowError, setRowError] = useState<string | null>(null);
+/** "Technical bomber jacket, size M": tells apart two sizes of one product in labels. */
+const describe = (line: CartLine) => (line.sizeLabel ? `${line.name}, size ${line.sizeLabel}` : line.name);
 
-  const report = (result: CartActionState) => {
-    const kind = result.status === "error" ? "error" : "ok";
-    if (result.message) onResult({ kind, text: result.message });
-    // Errors and "only N available" stay visible on the row; plain success doesn't need to.
-    setRowError(kind === "error" || result.message?.startsWith("Only") ? (result.message ?? null) : null);
-  };
+const notIncluded = "It isn’t included in your subtotal.";
+
+function issueText(line: CartLine): string | null {
+  switch (line.issue) {
+    case "reduced":
+      return `We’ve lowered this to ${line.qty}, the number available.`;
+    case "sold_out":
+      return notIncluded;
+    case "size_unavailable":
+      return `Size ${line.size} is no longer available. ${notIncluded}`;
+    case "held_elsewhere":
+      return `The remaining stock is already in your bag in another size. ${notIncluded}`;
+    default:
+      return null;
+  }
+}
+
+function BagLineRow({ line, onAnnounce }: { line: CartLine; onAnnounce: (text: string) => void }) {
+  const [note, setNote] = useState<Note>(null);
 
   const run =
     (fn: typeof updateQuantity, { focusHeadingOnSuccess = false } = {}) =>
     async (prev: CartActionState, formData: FormData): Promise<CartActionState> => {
+      let result: CartActionState;
       try {
-        const result = await fn(prev, formData);
-        report(result);
-        // The row is about to unmount; keep keyboard focus on the page instead of losing it to <body>.
-        if (focusHeadingOnSuccess && result.status === "ok") document.getElementById("bag-title")?.focus();
-        return result;
+        result = await fn(prev, formData);
       } catch {
-        const result: CartActionState = {
-          status: "error",
-          message: "We couldn't update your bag. Check your connection and try again.",
-        };
-        report(result);
-        return result;
+        result = { status: "error", message: "We couldn’t update your bag. Check your connection and try again." };
       }
+      if (result.message) onAnnounce(result.message);
+      // Keep errors and "only N available" on the row; a plain update needs no note.
+      setNote(
+        result.status === "error"
+          ? { kind: "error", text: result.message ?? "" }
+          : result.message?.startsWith("Only")
+            ? { kind: "warning", text: result.message }
+            : null,
+      );
+      // The row is about to unmount; keep keyboard focus on the page instead of losing it to <body>.
+      if (focusHeadingOnSuccess && result.status === "ok") document.getElementById("bag-title")?.focus();
+      return result;
     };
 
   const [, update, updating] = useActionState(run(updateQuantity), {});
   const [, remove, removing] = useActionState(run(removeFromCart, { focusHeadingOnSuccess: true }), {});
   const busy = updating || removing;
-  const unavailable = line.issue === "unavailable";
+  const unavailable = line.qty === 0;
+  const label = describe(line);
+  const issue = issueText(line);
+
   const ids = (
     <>
       <input type="hidden" name="slug" value={line.slug} />
@@ -80,83 +101,118 @@ function BagLineRow({ line, onResult }: { line: CartLine; onResult: (s: Status) 
           alt=""
           fill
           sizes="(width >= 48rem) 7.5rem, 5.5rem"
-          className={unavailable ? "opacity-60" : undefined}
+          className={unavailable ? "opacity-50 grayscale" : undefined}
         />
       </Link>
 
-      <div className="flex min-w-0 flex-col gap-4">
-        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1">
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex items-start justify-between gap-4">
           <div className="stack min-w-0 gap-1 text-meta">
             <h3 className="text-meta font-normal normal-case">
               <Link href={line.href} className="link-quiet">
                 {line.name}
               </Link>
             </h3>
-            {line.size ? <p className="text-muted">Size {line.size}</p> : null}
+            {line.sizeLabel ? <p className="text-muted">Size {line.sizeLabel}</p> : null}
             <p className="text-muted tabular-nums">{formatPrice(line.priceCents)} each</p>
           </div>
-          <p className={`text-meta font-medium tabular-nums ${unavailable ? "text-muted" : ""}`}>
-            {unavailable ? "—" : formatPrice(line.lineTotalCents)}
+          <p className={`shrink-0 text-meta font-medium tabular-nums ${unavailable ? "text-muted" : ""}`}>
+            {unavailable ? (
+              <>
+                <span aria-hidden="true">—</span>
+                <span className="sr-only">Not included</span>
+              </>
+            ) : (
+              formatPrice(line.lineTotalCents)
+            )}
           </p>
         </div>
 
-        {unavailable ? (
-          <p className="text-meta text-danger">No longer available. It isn&rsquo;t included in your subtotal.</p>
-        ) : (
-          <form action={update} className="flex items-center gap-4">
+        {/* Stock state: sold out, low stock, or a change since the line was added. */}
+        {line.issue === "sold_out" ? (
+          <StockStatus stock={{ status: "out_of_stock" }} />
+        ) : !unavailable && line.lowStock ? (
+          <StockStatus stock={{ status: "low_stock", quantity: line.lowStock }} />
+        ) : null}
+        {issue ? (
+          <p className={`text-meta ${unavailable ? "text-muted" : "text-warning"}`}>{issue}</p>
+        ) : !unavailable && !line.lowStock && line.qty >= line.maxQty ? (
+          <p className="text-meta text-muted">All {line.maxQty} available are in your bag.</p>
+        ) : null}
+
+        <div className="mt-1 flex flex-wrap items-center gap-x-6 gap-y-3">
+          {unavailable ? null : (
+            <form action={update} className="flex items-center gap-3">
+              {ids}
+              <div className="flex items-center border border-line" role="group" aria-label={`Quantity, ${label}`}>
+                <StepButton
+                  qty={line.qty - 1}
+                  disabled={busy || line.qty <= 1}
+                  label={`Decrease quantity of ${label}`}
+                  symbol="−"
+                />
+                <output className="min-w-8 text-center text-meta tabular-nums">{line.qty}</output>
+                <StepButton
+                  qty={line.qty + 1}
+                  disabled={busy || line.qty >= line.maxQty}
+                  label={`Increase quantity of ${label}`}
+                  symbol="+"
+                />
+              </div>
+              {updating ? <Spinner /> : null}
+            </form>
+          )}
+
+          <form action={remove} className="flex items-center gap-3">
             {ids}
-            <div className="flex items-center border border-line" role="group" aria-label={`Quantity, ${line.name}`}>
-              <button
-                type="submit"
-                name="qty"
-                value={line.qty - 1}
-                className="btn btn-icon"
-                disabled={busy || line.qty <= 1}
-                aria-label="Decrease quantity"
-              >
-                <span aria-hidden="true">−</span>
-              </button>
-              <span className="min-w-8 text-center text-meta tabular-nums" aria-live="off">
-                {line.qty}
-              </span>
-              <button
-                type="submit"
-                name="qty"
-                value={line.qty + 1}
-                className="btn btn-icon"
-                disabled={busy || line.qty >= line.maxQty}
-                aria-label="Increase quantity"
-              >
-                <span aria-hidden="true">+</span>
-              </button>
-            </div>
-            {busy ? (
-              <span
-                aria-hidden="true"
-                className="size-3 animate-spin border border-current border-t-transparent motion-reduce:animate-none"
-              />
-            ) : null}
-            <p className="text-meta text-muted">
-              {line.issue === "reduced"
-                ? `Only ${line.maxQty} available`
-                : line.qty >= line.maxQty
-                  ? "Maximum available"
-                  : line.lowStock
-                    ? `Only ${line.lowStock} left`
-                    : null}
-            </p>
+            <button
+              type="submit"
+              className="btn btn-text text-micro"
+              aria-disabled={busy || undefined}
+              onClick={preventWhenDisabled}
+              aria-label={`Remove ${label}`}
+            >
+              Remove
+            </button>
+            {removing ? <Spinner /> : null}
           </form>
-        )}
+        </div>
 
-        {rowError ? <p className="text-meta text-danger">{rowError}</p> : null}
-
-        <form action={remove}>
-          {ids}
-          <button type="submit" className="btn btn-text text-micro" disabled={busy} aria-label={`Remove ${line.name}`}>
-            Remove
-          </button>
-        </form>
+        {note ? <p className={`text-meta ${note.kind === "error" ? "text-danger" : "text-warning"}`}>{note.text}</p> : null}
       </div>
     </li>
+  );
+}
+
+/**
+ * aria-disabled rather than disabled: a disabled button drops keyboard focus to
+ * <body>, which would happen on every step while saving and at the stock limit.
+ */
+function StepButton({ qty, disabled, label, symbol }: { qty: number; disabled: boolean; label: string; symbol: string }) {
+  return (
+    <button
+      type="submit"
+      name="qty"
+      value={qty}
+      className="btn btn-icon"
+      aria-disabled={disabled || undefined}
+      onClick={preventWhenDisabled}
+      aria-label={label}
+    >
+      <span aria-hidden="true">{symbol}</span>
+    </button>
+  );
+}
+
+function preventWhenDisabled(event: MouseEvent<HTMLButtonElement>) {
+  if (event.currentTarget.getAttribute("aria-disabled") === "true") event.preventDefault();
+}
+
+function Spinner() {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-3 animate-spin border border-current border-t-transparent motion-reduce:animate-none"
+    />
   );
 }
