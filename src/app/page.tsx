@@ -77,7 +77,7 @@ export default async function HomePage() {
               New arrivals
             </h2>
           </div>
-          <Link href="/collections/new" className="btn btn-text shrink-0">
+          <Link href="/arrivals" className="btn btn-text shrink-0">
             View all
           </Link>
         </div>

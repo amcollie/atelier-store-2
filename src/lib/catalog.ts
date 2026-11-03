@@ -1,6 +1,6 @@
 import "server-only";
 
-import { desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
 
 import { db } from "@/db";
@@ -123,4 +123,58 @@ export async function getProductSlugs(): Promise<string[]> {
 
   const rows = await db.select({ slug: products.slug }).from(products);
   return rows.map((r) => r.slug);
+}
+
+export type Collection = {
+  /** The top category, or the sub-category when `sub` was given. */
+  category: CategoryRef & { parent: CategoryRef | null };
+  /** Sub-categories of the top category, for the collection's sub-navigation. */
+  subcategories: (CategoryRef & { parent: CategoryRef })[];
+  products: Product[];
+};
+
+/** A top category (all of its sub-categories' products) or one sub-category, newest first. */
+export async function getCollection(top: string, sub?: string): Promise<Collection | undefined> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("catalog");
+
+  const topRow = await db.query.categories.findFirst({
+    where: and(isNull(categories.parentId), eq(categories.slug, top)),
+    with: { children: { orderBy: [asc(categories.sortOrder), asc(categories.name)] } },
+  });
+  if (!topRow) return undefined;
+
+  const topRef = { slug: topRow.slug, name: topRow.name };
+  const subRow = sub ? topRow.children.find((c) => c.slug === sub) : undefined;
+  if (sub && !subRow) return undefined;
+
+  const categoryIds = subRow ? [subRow.id] : topRow.children.map((c) => c.id);
+  const rows = categoryIds.length
+    ? await db.query.products.findMany({
+        with: withRelations,
+        where: inArray(products.categoryId, categoryIds),
+        orderBy: [desc(products.createdAt), desc(products.id)],
+      })
+    : [];
+
+  return {
+    category: subRow ? { slug: subRow.slug, name: subRow.name, parent: topRef } : { ...topRef, parent: null },
+    subcategories: topRow.children.map((c) => ({ slug: c.slug, name: c.name, parent: topRef })),
+    products: rows.map(toProduct),
+  };
+}
+
+/** Every top category and sub-category, for generateStaticParams. */
+export async function getCollectionPaths(): Promise<{ top: string; sub?: string }[]> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("catalog");
+
+  const rows = await db.query.categories.findMany({
+    where: isNull(categories.parentId),
+    columns: { slug: true },
+    with: { children: { columns: { slug: true } } },
+  });
+  return rows.flatMap((t) => [{ top: t.slug }, ...t.children.map((c) => ({ top: t.slug, sub: c.slug }))]);
 }
