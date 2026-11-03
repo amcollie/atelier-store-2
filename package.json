@@ -12,8 +12,9 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx --env-file=.env.local src/db/seed.ts",
-    "auth:generate": "npx auth@latest generate --output src/db/auth-schema.ts",
-    "typecheck": "tsc --noEmit"
+    "auth:generate": "pnpm dlx auth@1.7.10 generate --output src/db/auth-schema.ts --yes",
+    "typecheck": "tsc --noEmit",
+    "auth:make-admin": "tsx --env-file=.env.local src/db/make-admin.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

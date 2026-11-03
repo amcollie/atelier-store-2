@@ -17,7 +17,8 @@ pnpm db:migrate      # apply migrations
 pnpm db:push         # push schema directly (no migration files)
 pnpm db:studio       # Drizzle Studio
 pnpm db:seed         # idempotent upsert of the initial catalogue (src/db/seed-data.ts)
-pnpm auth:generate   # Better Auth CLI: write auth tables to src/db/auth-schema.ts
+pnpm auth:generate   # Better Auth CLI (pinned to the installed version): regenerate src/db/auth-schema.ts
+pnpm auth:make-admin <email>  # promote an existing user to the admin role
 ```
 
 There is no test runner set up yet.
@@ -32,7 +33,7 @@ Next.js 16.4 (App Router, `src/` dir), React 19, TypeScript, Tailwind CSS v4, Be
 
 All tokens and primitives live in `src/app/globals.css`; there is no `tailwind.config`. Colours are runtime CSS variables on `:root`, mapped into Tailwind via `@theme inline`, so `.theme-inverse` re-scopes a subtree (footer, dark bands) by swapping the variables. Use semantic utilities (`bg-paper`, `text-ink`, `text-muted`, `border-line`, `text-caption`, `heading-*`, `eyebrow`, `container-page`, `grid-products`, `media-frame`) rather than raw colours or Tailwind's default palette. Buttons/links/fields are component classes (`btn btn-primary`, `link`, `field`). Corners are square everywhere. Breakpoints: `md` 768, `lg` 1024, `xl` 1440.
 
-Products come from Postgres through `src/lib/catalog.ts` (see Database conventions below). Marketing content (navigation, hero, collections, editorial, services) is still placeholder data in `src/lib/sample-data.ts`. Unsplash images are allowed via `images.remotePatterns` in `next.config.ts`; gallery "detail" shots are focal-point crops of the same photo. The announcement bar, `SiteHeader` and `SiteFooter` are rendered once in `src/app/layout.tsx`; each page supplies its own `<main id="main" className="flex-1">`. Client components are kept to `SiteHeader`, `NewsletterForm` and `ProductPurchase`. Sample photos were checked for visible third-party logos; keep it that way when swapping images.
+Products come from Postgres through `src/lib/catalog.ts` (see Database conventions below). Marketing content (navigation, hero, collections, editorial, services) is still placeholder data in `src/lib/sample-data.ts`. Unsplash images are allowed via `images.remotePatterns` in `next.config.ts`; gallery "detail" shots are focal-point crops of the same photo. The announcement bar, `SiteHeader` and `SiteFooter` are rendered once in `src/app/layout.tsx`; each page supplies its own `<main id="main" className="flex-1">`. Client components are kept to `SiteHeader`, `NewsletterForm`, `ProductPurchase` and `AuthForm`. Sample photos were checked for visible third-party logos; keep it that way when swapping images.
 
 With Cache Components on, product slugs come from `generateStaticParams`; an unknown slug renders `not-found.tsx` with a 200 status plus `noindex` (documented Next 16 behaviour; `dynamicParams` is unavailable).
 
@@ -40,7 +41,7 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 
 - **Migrations:** change the schema with `db:generate` + `db:migrate` and commit the SQL in `drizzle/`. Don't use `db:push` for real schema changes.
 - **Table definitions:** tables live in their own file under `src/db/` (catalogue: `catalog-schema.ts`) and are re-exported from `schema.ts`. Use integer identity primary keys, snake_case column names with camelCase TS keys, and `timestamptz` timestamps.
-- **Scope:** v1 has only products, categories and stock. Don't add carts, orders, payments, reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
+- **Scope:** the v1 catalogue has only products, categories and stock (plus the generated auth tables; see Authentication). Don't add carts, orders, payments, reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
 - **Category tree:**
   - It is two levels deep. The top categories are Women, Men and Unisex (`parent_id` null); every other category is a sub-category of one of them.
   - A product belongs to exactly one **sub-category**, never a top category. Items that fit both or neither go under Unisex.
@@ -58,13 +59,27 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
   - `patches/drizzle-kit@0.31.11.patch` (registered in `pnpm-workspace.yaml`) limits it to the `https://local.drizzle.studio` origin.
   - Use pnpm only; npm would install drizzle-kit without the patch. When upgrading drizzle-kit, redo the patch, and drop it once upstream fixes the issue.
 
+## Authentication
+
+- **Scope (v1):** email and password sign-up, sign-in and sign-out, plus 30-day database sessions; the `admin` plugin provides roles. Don't add social login, password reset, 2FA, email verification or other account features unless asked.
+- **Config:** `src/lib/auth.ts`.
+  - `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` come from the env.
+  - Rate limits are stored in Postgres.
+  - There's no cookie cache, so a role change or ban applies on the next request.
+  - The plugin order is `admin()`, then `nextCookies()`, which must stay last so server actions can set cookies.
+  - The file has no `server-only` import, because the Better Auth CLI has to load it.
+- **Schema:** `src/db/auth-schema.ts` is generated by `pnpm auth:generate`. Never hand-edit it, and regenerate it after adding plugins, then run `db:generate` + `db:migrate`. It's an exception to the table conventions above: text ids and plain `timestamp` columns, stored as UTC. A raw SQL client in a non-UTC time zone shows these timestamps shifted; Drizzle reads them correctly.
+- **Session reads:** go through `src/lib/session.ts` (`server-only`): `getCurrentUser()` (React-cached per request), `requireUser()` and `requireAdmin()`.
+  - These read the request, so call them only inside `<Suspense>`, never in `'use cache'`.
+  - Pages and server actions must call them themselves. `src/proxy.ts` only checks that a session cookie exists on `/account` and `/admin`, and is not a security boundary.
+- **Admin routes:** `/admin` is admin-only. Signed-out visitors go to sign-in, and signed-in non-admins get a 404, so admin pages carry no identifying title. The plugin's `/api/auth/admin/*` endpoints check the role themselves.
+- **Forms:** sign-in and sign-up use the server actions in `src/app/(auth)/actions.ts` with `AuthForm`. Pass any redirect target through `safeCallbackURL`, which allows same-site paths only.
+
 ## Architecture
 
-The request path for auth is: `authClient` (`src/lib/auth-client.ts`, browser) → `src/app/api/auth/[...all]/route.ts` (catch-all, delegates to `toNextJsHandler`) → `auth` (`src/lib/auth.ts`, server only) → `db` (`src/db/index.ts`) → Neon Postgres.
+The request path for auth is: `AuthForm` → server actions → `auth.api.*` (or `authClient` (`src/lib/auth-client.ts`, browser) → `src/app/api/auth/[...all]/route.ts`, the catch-all that delegates to `toNextJsHandler`) → `auth` (`src/lib/auth.ts`) → `db` (`src/db/index.ts`) → Neon Postgres.
 
 - `src/db/schema.ts` is the single schema entry point. Both the Drizzle client (`src/db/index.ts`) and the Better Auth Drizzle adapter (`src/lib/auth.ts`) import `* as schema` from it, and `drizzle.config.ts` points drizzle-kit at it. New table files must be re-exported from here to be seen by any of them.
-- The Better Auth tables (`user`, `session`, `account`, `verification`) are not yet generated. Until `npm run auth:generate` is run and `src/db/auth-schema.ts` is re-exported from `schema.ts` and pushed/migrated, the build warns about missing tables and auth requests fail. Regenerate after adding Better Auth plugins that need tables.
-- In `src/lib/auth.ts`, the `nextCookies()` plugin must stay last in `plugins` so server actions can set cookies.
 - `src/db/index.ts` throws at import time if `DATABASE_URL` is unset, so any module that imports `db` or `auth` (including the auth route during `next build`) needs it defined.
 
 ## Environment
