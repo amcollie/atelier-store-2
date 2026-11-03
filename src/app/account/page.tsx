@@ -1,55 +1,75 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
+import { type ReactNode, Suspense } from "react";
 
-import { signOut } from "@/app/(auth)/actions";
+import { AccountBodySkeleton, AccountShell } from "@/components/account-shell";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "My account", robots: { index: false } };
 
-const memberSince = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
-
-export default function AccountPage() {
+export default function AccountOverviewPage() {
   return (
-    <main id="main" className="section container-page flex-1">
-      <div className="stack max-w-xl gap-8">
-        <header className="stack gap-3">
-          <p className="eyebrow text-muted">Account</p>
-          <h1 className="heading-display">My account</h1>
-        </header>
-        <Suspense fallback={<div className="h-48 bg-surface" aria-busy="true" />}>
-          <AccountDetails />
-        </Suspense>
-      </div>
-    </main>
+    <AccountShell current="overview" title="Overview">
+      <Suspense fallback={<AccountBodySkeleton />}>
+        <Overview />
+      </Suspense>
+    </AccountShell>
   );
 }
 
-async function AccountDetails() {
+async function Overview() {
   const user = await requireUser("/account");
+  const firstName = user.name.trim().split(/\s+/)[0];
 
   return (
     <div className="stack gap-8">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 border-y border-line py-6 text-meta">
-        <dt className="text-muted">Name</dt>
-        <dd>{user.name}</dd>
-        <dt className="text-muted">Email</dt>
-        <dd className="break-all">{user.email}</dd>
-        <dt className="text-muted">Member since</dt>
-        <dd>{memberSince.format(user.createdAt)}</dd>
-      </dl>
-      <div className="cluster gap-x-6 gap-y-4">
-        <form action={signOut}>
-          <button type="submit" className="btn btn-secondary">
-            Sign out
-          </button>
-        </form>
-        {user.role === "admin" ? (
-          <Link href="/admin" className="btn btn-text">
-            Admin
-          </Link>
-        ) : null}
+      <div className="stack gap-2">
+        <h2 className="heading-title normal-case">Welcome back, {firstName}</h2>
+        <p className="text-meta break-all text-muted">Signed in as {user.email}</p>
       </div>
+
+      <ul className="divide-y divide-line border-y border-line">
+        <OverviewItem
+          title="Account details"
+          description={
+            <>
+              {user.name} · <span className="break-all">{user.email}</span>
+            </>
+          }
+        >
+          <Link href="/account/details" className="btn btn-text">
+            View details
+          </Link>
+        </OverviewItem>
+        <OverviewItem title="New arrivals" description="The latest pieces from the atelier, newest first.">
+          <Link href="/arrivals" className="btn btn-text">
+            Shop new arrivals
+          </Link>
+        </OverviewItem>
+        <OverviewItem
+          title="Client services"
+          description="Our client advisors can answer questions about sizing, materials and delivery."
+        >
+          <Link href="/contact" className="btn btn-text">
+            Contact us
+          </Link>
+          <Link href="/services/appointments" className="btn btn-text">
+            Book an appointment
+          </Link>
+        </OverviewItem>
+      </ul>
     </div>
+  );
+}
+
+function OverviewItem({ title, description, children }: { title: string; description: ReactNode; children: ReactNode }) {
+  return (
+    <li className="grid gap-4 py-6 md:grid-cols-[1fr_auto] md:items-center md:gap-8">
+      <div className="stack min-w-0 gap-1">
+        <h3 className="eyebrow">{title}</h3>
+        <p className="text-meta text-muted">{description}</p>
+      </div>
+      <div className="cluster gap-x-6 gap-y-3">{children}</div>
+    </li>
   );
 }

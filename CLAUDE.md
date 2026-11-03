@@ -72,12 +72,18 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 - **Session reads:** go through `src/lib/session.ts` (`server-only`): `getCurrentUser()` (React-cached per request), `requireUser()` and `requireAdmin()`.
   - These read the request, so call them only inside `<Suspense>`, never in `'use cache'`.
   - Pages and server actions must call them themselves. `src/proxy.ts` only checks that a session cookie exists on `/account` and `/admin`, and is not a security boundary.
+- **Account area:** each `/account/*` page renders `AccountShell` (`src/components/account-shell.tsx`) with its own `current` section, then calls `requireUser()` inside `<Suspense>`. The pages are an Overview and read-only Account details. To add a page, add it to `sections` in the shell. There's no order history yet.
 - **Admin routes:** `/admin` is admin-only. Signed-out visitors go to sign-in, and signed-in non-admins get a 404, so admin pages carry no identifying title. The plugin's `/api/auth/admin/*` endpoints check the role themselves.
-- **Forms:** sign-in and sign-up use the server actions in `src/app/(auth)/actions.ts` with `AuthForm`. Pass any redirect target through `safeCallbackURL`, which allows same-site paths only.
+- **Forms:** `AuthForm` signs in and signs up through `authClient`, which calls the `/api/auth` HTTP endpoints.
+  - Don't move these calls into server actions: Better Auth only rate-limits requests that pass through its handler, and `auth.api.*` calls skip the limits. The limits are on in production only, with 3 attempts per 10 seconds on sign-in and sign-up.
+  - Sign-out stays a server action in `src/app/(auth)/actions.ts`.
+  - Client validation lives in `src/lib/auth-validation.ts` and mirrors Better Auth's limits; the server still validates.
+  - Pass any redirect target through `safeCallbackURL`, which allows same-site paths only.
+  - Behind a proxy, set `advanced.ipAddress` so the limits apply per client IP instead of one shared bucket.
 
 ## Architecture
 
-The request path for auth is: `AuthForm` → server actions → `auth.api.*` (or `authClient` (`src/lib/auth-client.ts`, browser) → `src/app/api/auth/[...all]/route.ts`, the catch-all that delegates to `toNextJsHandler`) → `auth` (`src/lib/auth.ts`) → `db` (`src/db/index.ts`) → Neon Postgres.
+The request path for auth is: `AuthForm` → `authClient` (`src/lib/auth-client.ts`, browser) → `src/app/api/auth/[...all]/route.ts` (the catch-all that delegates to `toNextJsHandler`; rate limits apply here) → `auth` (`src/lib/auth.ts`) → `db` (`src/db/index.ts`) → Neon Postgres. Server code reads sessions through `src/lib/session.ts`.
 
 - `src/db/schema.ts` is the single schema entry point. Both the Drizzle client (`src/db/index.ts`) and the Better Auth Drizzle adapter (`src/lib/auth.ts`) import `* as schema` from it, and `drizzle.config.ts` points drizzle-kit at it. New table files must be re-exported from here to be seen by any of them.
 - `src/db/index.ts` throws at import time if `DATABASE_URL` is unset, so any module that imports `db` or `auth` (including the auth route during `next build`) needs it defined.
