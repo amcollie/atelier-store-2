@@ -41,7 +41,7 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 
 - **Migrations:** change the schema with `db:generate` + `db:migrate` and commit the SQL in `drizzle/`. Don't use `db:push` for real schema changes.
 - **Table definitions:** tables live in their own file under `src/db/` (catalogue: `catalog-schema.ts`) and are re-exported from `schema.ts`. Use integer identity primary keys, snake_case column names with camelCase TS keys, and `timestamptz` timestamps.
-- **Scope:** the v1 catalogue has only products, categories and stock (plus the generated auth tables; see Authentication). The cart lives in a cookie, not a table (see Cart). Don't add orders, payments, checkout, reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
+- **Scope:** the v1 catalogue has only products, categories and stock (plus the generated auth tables and the order tables; see Authentication and Orders). The cart lives in a cookie, not a table (see Cart). Orders have tables (see Orders), but Stripe checkout isn't built yet. Don't add reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
 - **Category tree:**
   - It is two levels deep. The top categories are Women, Men and Unisex (`parent_id` null); every other category is a sub-category of one of them.
   - A product belongs to exactly one **sub-category**, never a top category. Items that fit both or neither go under Unisex.
@@ -67,6 +67,27 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 - **Stock:** `product_stock` is per product, so all sizes of one product share it. `resolveCart()` fills lines in cart order and clamps them to live stock; each line gets an `issue` (`reduced`, `sold_out`, `size_unavailable`, `held_elsewhere`), and a line with `qty` 0 is left out of the subtotal but kept in the bag so the shopper can see and remove it. Rendering can't set cookies, so a clamped quantity is saved by the next cart action.
 - **Mutations:** `addToCart`, `updateQuantity` and `removeFromCart` in `src/app/bag/actions.ts`. Each re-reads the cookie, validates its input and re-checks stock before writing. Setting the cookie re-renders the route, which updates `/bag` and the header count.
 - **No checkout:** stock is not reserved, and there is no checkout or payment yet.
+
+## Orders
+
+Tables in `src/db/order-schema.ts` (migration `drizzle/0002_orders.sql`), for the planned Stripe Checkout. No code writes to them yet.
+
+- **`orders`:**
+  - Every order belongs to a signed-in user (`user_id` → `user.id`, `ON DELETE restrict`, so a user with orders can't be deleted).
+  - `public_id` is the random id to use in URLs, never `id`.
+  - Money is integer cents, and `total_cents = subtotal_cents + shipping_cents` is enforced.
+- **Two explicit states, kept consistent by CHECK constraints:**
+  - `status` (`order_status`: `pending` holds stock, `paid`, `canceled` has returned it).
+  - `payment_status` (`payment_status`: `unpaid`, `processing`, `paid`, `failed`, `expired`, `canceled`), which mirrors what Stripe reports.
+  - `paid_at` is set exactly when the order is paid, and `canceled_at` exactly when it's canceled.
+  - Moving past `unpaid` requires a Checkout Session id.
+- **Stripe ids:** `stripe_checkout_session_id` (`cs_…`) and `stripe_payment_intent_id` (`pi_…`) are unique, nullable columns with a format check.
+- **`order_items`:**
+  - Snapshots the product slug, name, size and unit price at checkout. Catalogue edits never change past orders.
+  - `line_total_cents = unit_price_cents * quantity`, with one line per product and size.
+  - Items cascade with their order; products with order lines can't be deleted (restrict).
+- **`stripe_events`:** processed webhook event ids (`evt_…`) for deduplication. Insert with `ON CONFLICT DO NOTHING`. `order_id` is set to null if the order is deleted.
+- **Writes:** neon-http has no interactive transactions, so status changes and stock moves must each be a single conditional statement (`UPDATE … WHERE status = …`) or a `db.batch`.
 
 ## Authentication
 
