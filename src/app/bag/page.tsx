@@ -45,12 +45,19 @@ export default function BagPage({ searchParams }: PageProps<"/bag">) {
 
 async function BagContents({ searchParams }: { searchParams: PageProps<"/bag">["searchParams"] }) {
   const [cart, user, params] = await Promise.all([getCart(), getCurrentUser(), searchParams]);
-  const canceled = params.checkout === "canceled";
-  const canceledNotice = canceled ? (
-    <p className="border-l-2 border-line-strong py-1 pl-4 text-meta" role="status">
-      Checkout canceled. You haven&rsquo;t been charged, and your bag is just as you left it.
-    </p>
-  ) : null;
+  // Set by the checkout return routes and by startCheckout when the bag no longer matches stock.
+  const checkoutNotice =
+    params.checkout === "canceled" ? (
+      <p className="border-l-2 border-line-strong py-1 pl-4 text-meta" role="status">
+        Checkout canceled. You haven&rsquo;t been charged, and your bag is just as you left it.
+      </p>
+    ) : params.checkout === "changed" || params.checkout === "unavailable" ? (
+      <p className="border-l-2 border-warning py-1 pl-4 text-meta text-warning" role="alert">
+        {params.checkout === "changed"
+          ? "Stock changed before we could start checkout, so we’ve updated your bag to match. Review it, then check out again."
+          : "Someone just bought the last of an item in your bag. Review your bag, then check out again."}
+      </p>
+    ) : null;
 
   if (cart.lines.length === 0) {
     return (
@@ -96,7 +103,7 @@ async function BagContents({ searchParams }: { searchParams: PageProps<"/bag">["
           <h2 id="bag-items-title" className="sr-only">
             Items
           </h2>
-          {canceledNotice ? <div className="mb-6">{canceledNotice}</div> : null}
+          {checkoutNotice ? <div className="mb-6">{checkoutNotice}</div> : null}
           {notice ? (
             <p className="mb-6 border-l-2 border-warning py-1 pl-4 text-meta text-warning" role="status">
               {notice}
@@ -115,11 +122,15 @@ async function BagContents({ searchParams }: { searchParams: PageProps<"/bag">["
                 <dt className="text-muted">
                   Subtotal · {cart.count} {cart.count === 1 ? "item" : "items"}
                 </dt>
-                <dd className="font-medium tabular-nums">{formatPrice(cart.subtotalCents)}</dd>
+                <dd className="tabular-nums">{formatPrice(cart.subtotalCents)}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">Shipping</dt>
                 <dd>Complimentary</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-line pt-3">
+                <dt className="font-medium">Total</dt>
+                <dd className="font-medium tabular-nums">{formatPrice(cart.subtotalCents)}</dd>
               </div>
             </dl>
             {excluded > 0 ? (

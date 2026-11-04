@@ -100,7 +100,7 @@ Stripe Checkout (hosted), USD and US shipping only, with no tax (Stripe Tax need
   - `CheckoutButton` calls `startCheckout` in `src/app/checkout/actions.ts`, which:
     - requires a signed-in user;
     - settles stale holds and the shopper's earlier unpaid checkouts;
-    - runs `createPendingOrder`, which re-resolves the bag cookie against live prices and stock. Any reduced or unavailable line returns `changed`, the corrected bag is saved, and the shopper reviews it.
+    - runs `createPendingOrder`, which re-resolves the bag cookie against live prices and stock. Any reduced or unavailable line returns `changed`, the corrected bag is saved, and the shopper is redirected to `/bag?checkout=changed` (or `?checkout=unavailable` when someone else took the last one) to review it. `/bag` shows one notice per `checkout` value, including `canceled`.
   - It then creates the Checkout Session with `price_data` built from the order's database prices and redirects to Stripe.
   - If session creation fails, the hold is released.
   - Sessions last 31 minutes, which is the stock hold.
