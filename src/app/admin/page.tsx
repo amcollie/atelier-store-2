@@ -1,35 +1,27 @@
-import type { Metadata } from "next";
-import { Suspense } from "react";
+import Link from "next/link";
 
-import { requireAdmin } from "@/lib/session";
+import { AdminPage } from "@/components/admin/admin-page";
+import { ADMIN_SECTIONS } from "@/lib/admin/sections";
 
-// No title: non-admins get a 404, so the page shouldn't name itself.
-export const metadata: Metadata = { robots: { index: false } };
+// Blocks on the role check; see src/app/admin/layout.tsx.
+export const instant = false;
 
-// Everything sits behind the boundary so nothing about the page renders before the role check.
-export default function AdminPage() {
+export default function AdminOverviewPage() {
   return (
-    <Suspense fallback={<main id="main" className="flex-1" aria-busy="true" />}>
-      <AdminDashboard />
-    </Suspense>
-  );
-}
-
-async function AdminDashboard() {
-  const user = await requireAdmin("/admin");
-
-  return (
-    <main id="main" className="section container-page flex-1">
-      <div className="stack max-w-xl gap-6">
-        <header className="stack gap-3">
-          <p className="eyebrow text-muted">Admin</p>
-          <h1 className="heading-display">Dashboard</h1>
-        </header>
-        <p className="text-meta text-muted">
-          Signed in as {user.name} ({user.email}), admin.
-        </p>
-        <p className="border-y border-line py-6 text-meta text-muted">Store management tools will live here.</p>
-      </div>
-    </main>
+    <AdminPage path="/admin" title="Overview">
+      <ul className="divide-y divide-line border-y border-line">
+        {ADMIN_SECTIONS.map((section) => (
+          <li key={section.href} className="grid gap-4 py-6 md:grid-cols-[1fr_auto] md:items-center md:gap-8">
+            <div className="stack min-w-0 gap-1">
+              <h2 className="eyebrow">{section.label}</h2>
+              <p className="text-meta text-muted">{section.description}</p>
+            </div>
+            <Link href={section.href} className="btn btn-text">
+              Open {section.label.toLowerCase()}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </AdminPage>
   );
 }

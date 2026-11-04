@@ -39,6 +39,34 @@ export async function requireAdmin(returnTo = "/admin"): Promise<CurrentUser> {
   return user;
 }
 
+/**
+ * For admin server actions. Actions are public POST endpoints that anyone can
+ * call directly, so each one checks the role itself; this returns the admin, or
+ * null for signed-out users and non-admins (no redirect or 404 from an action).
+ */
+export async function getAdminForAction(): Promise<CurrentUser | null> {
+  const user = await getCurrentUser();
+  return user?.role === "admin" ? user : null;
+}
+
+export class AdminAccessError extends Error {
+  constructor() {
+    super("Admin access required.");
+    this.name = "AdminAccessError";
+  }
+}
+
+/**
+ * For the admin data layer (src/lib/admin/*): a second check under pages and
+ * actions, so a caller that forgets its own check still can't read or write.
+ * getCurrentUser is cached per request, so repeating the check is free.
+ */
+export async function assertAdmin(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (user?.role !== "admin") throw new AdminAccessError();
+  return user;
+}
+
 /** Only same-site paths: rejects absolute URLs, `//host` and `/\host` so callbackURL can't redirect off-site. */
 export function safeCallbackURL(value: unknown, fallback = "/account"): string {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
