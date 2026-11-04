@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { revalidateTag } from "next/cache";
 import type Stripe from "stripe";
 
@@ -10,7 +10,7 @@ import { db } from "@/db";
 import { type OrderShipping, orders } from "@/db/schema";
 import { lineKey, loadLiveProducts, resolveCart } from "@/lib/cart";
 import type { CartRef } from "@/lib/cart-types";
-import type { OrderView } from "@/lib/order-types";
+import type { OrderSummary, OrderView } from "@/lib/order-types";
 import { getStripe } from "@/lib/stripe";
 
 // Orders and stock holds. This module is the only code that writes orders.
@@ -343,6 +343,28 @@ export async function findOrderForUser(publicId: string, userId: string) {
 }
 
 /** An order with its items, only if it belongs to this user. */
+/**
+ * The signed-in customer's order history, newest first. Always scoped to the
+ * given user id (pass the id from requireUser, never from the request).
+ * Checkouts the shopper abandoned (canceled or expired before any payment) are
+ * left out: they were never charged and would only repeat the bag.
+ */
+export async function listOrdersForUser(userId: string, limit = 50): Promise<OrderSummary[]> {
+  const rows = await db.query.orders.findMany({
+    where: and(eq(orders.userId, userId), notInArray(orders.paymentStatus, ["canceled", "expired"])),
+    orderBy: [desc(orders.createdAt), desc(orders.id)],
+    limit,
+    columns: { publicId: true, status: true, paymentStatus: true, totalCents: true, createdAt: true },
+    with: { items: { columns: { productName: true, quantity: true }, orderBy: (i, { asc }) => [asc(i.id)] } },
+  });
+  return rows.map(({ items, ...order }) => ({
+    ...order,
+    itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
+    lineCount: items.length,
+    firstItemName: items[0]?.productName ?? null,
+  }));
+}
+
 export async function getOrderView(publicId: string, userId: string): Promise<OrderView | undefined> {
   const order = await db.query.orders.findFirst({
     where: and(eq(orders.publicId, publicId), eq(orders.userId, userId)),

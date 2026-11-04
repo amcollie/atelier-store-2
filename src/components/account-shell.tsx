@@ -4,10 +4,11 @@ import { type ReactNode, Suspense } from "react";
 import { signOut } from "@/app/(auth)/actions";
 import { getCurrentUser } from "@/lib/session";
 
-export type AccountSection = "overview" | "details";
+export type AccountSection = "overview" | "orders" | "details";
 
 const sections: { id: AccountSection; label: string; href: string }[] = [
   { id: "overview", label: "Overview", href: "/account" },
+  { id: "orders", label: "Orders", href: "/account/orders" },
   { id: "details", label: "Account details", href: "/account/details" },
 ];
 

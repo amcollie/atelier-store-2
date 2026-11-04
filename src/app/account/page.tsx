@@ -29,6 +29,11 @@ async function Overview() {
       </div>
 
       <ul className="divide-y divide-line border-y border-line">
+        <OverviewItem title="Orders" description="Your orders, their payment status and details.">
+          <Link href="/account/orders" className="btn btn-text">
+            View orders
+          </Link>
+        </OverviewItem>
         <OverviewItem
           title="Account details"
           description={

@@ -25,3 +25,27 @@ export type OrderView = {
     lineTotalCents: number;
   }[];
 };
+
+/** One row of a customer's order history. */
+export type OrderSummary = {
+  publicId: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  totalCents: number;
+  createdAt: Date;
+  /** Pieces across all lines. */
+  itemCount: number;
+  /** Distinct lines (product and size). */
+  lineCount: number;
+  firstItemName: string | null;
+};
+
+/** How each payment status reads to the customer, and the dot colour that goes with it. */
+export const PAYMENT_STATUS_DISPLAY: Record<PaymentStatus, { label: string; tone: "ok" | "wait" | "stop" }> = {
+  paid: { label: "Paid", tone: "ok" },
+  processing: { label: "Payment processing", tone: "wait" },
+  unpaid: { label: "Awaiting confirmation", tone: "wait" },
+  failed: { label: "Payment failed", tone: "stop" },
+  expired: { label: "Checkout expired", tone: "stop" },
+  canceled: { label: "Checkout canceled", tone: "stop" },
+};

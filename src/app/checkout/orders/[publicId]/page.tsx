@@ -91,6 +91,21 @@ async function Order({ publicId }: { publicId: string }) {
   return (
     <>
       <header className="container-page stack gap-4 pt-8 pb-8 md:pt-10 md:pb-10 lg:pt-12">
+        <nav aria-label="Breadcrumb">
+          <ol className="cluster gap-2 text-meta text-muted">
+            <li>
+              <Link href="/account" className="link-quiet">
+                My account
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li>
+              <Link href="/account/orders" className="link-quiet">
+                Orders
+              </Link>
+            </li>
+          </ol>
+        </nav>
         <p className={`eyebrow ${h.tone === "ok" ? "text-success" : h.tone === "wait" ? "text-warning" : "text-muted"}`}>
           {h.eyebrow}
         </p>
