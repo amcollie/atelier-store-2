@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { AccountBodySkeleton, AccountShell } from "@/components/account-shell";
-import { type OrderSummary, PAYMENT_STATUS_DISPLAY } from "@/lib/order-types";
+import { PaymentStatusLabel } from "@/components/payment-status";
+import type { OrderSummary } from "@/lib/order-types";
 import { listOrdersForUser } from "@/lib/orders";
 import { formatPrice } from "@/lib/sample-data";
 import { requireUser } from "@/lib/session";
@@ -12,8 +13,6 @@ export const metadata: Metadata = { title: "Orders", robots: { index: false } };
 
 const fullDate = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "long", year: "numeric" });
 
-const toneDot = { ok: "bg-success", wait: "bg-warning", stop: "bg-muted" } as const;
-const toneText = { ok: "text-ink", wait: "text-warning", stop: "text-muted" } as const;
 
 export default function AccountOrdersPage() {
   return (
@@ -65,7 +64,6 @@ async function Orders() {
 }
 
 function OrderRow({ order }: { order: OrderSummary }) {
-  const status = PAYMENT_STATUS_DISPLAY[order.paymentStatus];
   const others = order.lineCount - 1;
   const summary = order.firstItemName
     ? others > 0
@@ -83,9 +81,8 @@ function OrderRow({ order }: { order: OrderSummary }) {
         <dl className="flex flex-wrap gap-x-6 gap-y-1 text-meta">
           <div className="flex gap-2">
             <dt className="sr-only">Payment status</dt>
-            <dd className={`flex items-center gap-2 font-medium ${toneText[status.tone]}`}>
-              <span className={`size-1.5 shrink-0 rounded-full ${toneDot[status.tone]}`} aria-hidden="true" />
-              {status.label}
+            <dd>
+              <PaymentStatusLabel status={order.paymentStatus} />
             </dd>
           </div>
           <div className="flex gap-2">

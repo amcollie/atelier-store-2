@@ -23,6 +23,8 @@ export type OrderView = {
     unitPriceCents: number;
     quantity: number;
     lineTotalCents: number;
+    /** The product's current photo (not part of the snapshot). */
+    image: string;
   }[];
 };
 

@@ -368,7 +368,8 @@ export async function listOrdersForUser(userId: string, limit = 50): Promise<Ord
 export async function getOrderView(publicId: string, userId: string): Promise<OrderView | undefined> {
   const order = await db.query.orders.findFirst({
     where: and(eq(orders.publicId, publicId), eq(orders.userId, userId)),
-    with: { items: { orderBy: (i, { asc }) => [asc(i.id)] } },
+    // The product's current photo, for display only: name, size and prices stay the checkout-time snapshot.
+    with: { items: { orderBy: (i, { asc }) => [asc(i.id)], with: { product: { columns: { imageUrl: true } } } } },
   });
   if (!order) return undefined;
   return {
@@ -389,6 +390,7 @@ export async function getOrderView(publicId: string, userId: string): Promise<Or
       unitPriceCents: i.unitPriceCents,
       quantity: i.quantity,
       lineTotalCents: i.lineTotalCents,
+      image: i.product.imageUrl,
     })),
   };
 }

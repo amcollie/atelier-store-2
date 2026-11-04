@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { type ReactNode, Suspense } from "react";
 
 import { AwaitingConfirmation } from "@/components/awaiting-confirmation";
+import { PaymentStatusLabel } from "@/components/payment-status";
 import type { OrderView } from "@/lib/order-types";
 import { getOrderView } from "@/lib/orders";
 import { formatPrice } from "@/lib/sample-data";
@@ -34,7 +36,7 @@ function headline(order: OrderView): { eyebrow: string; title: string; body: str
     return {
       eyebrow: "Order confirmed",
       title: "Thank you",
-      body: "We’ve received your payment and your order is confirmed. It ships in 2–4 business days.",
+      body: "We’ve received your payment and your order is confirmed. Orders ship within 2–4 business days of payment.",
       tone: "ok",
     };
   }
@@ -87,6 +89,7 @@ async function Order({ publicId }: { publicId: string }) {
   // Pending with no word from Stripe yet (a delayed bank payment shows "processing" instead).
   const awaiting = order.status === "pending" && order.paymentStatus === "unpaid";
   const address = order.shipping?.address;
+  const itemCount = order.items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
     <>
@@ -103,6 +106,10 @@ async function Order({ publicId }: { publicId: string }) {
               <Link href="/account/orders" className="link-quiet">
                 Orders
               </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li aria-current="page" className="break-all">
+              Order {order.publicId}
             </li>
           </ol>
         </nav>
@@ -139,23 +146,36 @@ async function Order({ publicId }: { publicId: string }) {
         <div className="grid-page gap-y-10">
           <section aria-labelledby="items-title" className="col-span-4 md:col-span-8 lg:col-span-8">
             <h2 id="items-title" className="eyebrow mb-4">
-              Order details
+              Items · {itemCount}
             </h2>
             <ul className="divide-y divide-line border-y border-line">
               {order.items.map((item) => (
-                <li key={`${item.slug}-${item.size ?? ""}`} className="flex items-start justify-between gap-4 py-5 text-meta">
-                  <div className="stack min-w-0 gap-1">
-                    <Link href={`/products/${item.slug}`} className="link-quiet">
-                      {item.name}
-                    </Link>
-                    {item.size ? (
-                      <p className="text-muted">{item.size === "One size" ? item.size : `Size ${item.size}`}</p>
-                    ) : null}
-                    <p className="text-muted tabular-nums">
-                      {item.quantity} × {formatPrice(item.unitPriceCents)}
-                    </p>
+                <li
+                  key={`${item.slug}-${item.size ?? ""}`}
+                  className="grid grid-cols-[4.5rem_1fr] gap-4 py-5 text-meta md:grid-cols-[6rem_1fr] md:gap-6"
+                >
+                  <Link
+                    href={`/products/${item.slug}`}
+                    className="media-frame block aspect-[4/5]"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  >
+                    <Image src={item.image} alt="" fill sizes="(width >= 48rem) 6rem, 4.5rem" />
+                  </Link>
+                  <div className="flex min-w-0 items-start justify-between gap-4">
+                    <div className="stack min-w-0 gap-1">
+                      <Link href={`/products/${item.slug}`} className="link-quiet">
+                        {item.name}
+                      </Link>
+                      {item.size ? (
+                        <p className="text-muted">{item.size === "One size" ? item.size : `Size ${item.size}`}</p>
+                      ) : null}
+                      <p className="text-muted tabular-nums">
+                        Quantity {item.quantity} · {formatPrice(item.unitPriceCents)} each
+                      </p>
+                    </div>
+                    <p className="shrink-0 font-medium tabular-nums">{formatPrice(item.lineTotalCents)}</p>
                   </div>
-                  <p className="shrink-0 font-medium tabular-nums">{formatPrice(item.lineTotalCents)}</p>
                 </li>
               ))}
             </ul>
@@ -168,7 +188,12 @@ async function Order({ publicId }: { publicId: string }) {
               </h2>
               <dl className="stack gap-3 text-meta">
                 <Row label="Order number" value={<span className="break-all font-medium">{order.publicId}</span>} />
+                <Row
+                  label="Status"
+                  value={<PaymentStatusLabel status={order.paymentStatus} />}
+                />
                 <Row label="Placed" value={fullDate.format(order.createdAt)} />
+                {order.paidAt ? <Row label="Paid" value={fullDate.format(order.paidAt)} /> : null}
                 <Row label="Subtotal" value={formatPrice(order.subtotalCents)} />
                 <Row label="Shipping" value={order.shippingCents === 0 ? "Complimentary" : formatPrice(order.shippingCents)} />
                 <div className="flex justify-between gap-4 border-t border-line pt-3">
