@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { type ReactNode, Suspense } from "react";
 
+import { AwaitingConfirmation } from "@/components/awaiting-confirmation";
 import type { OrderView } from "@/lib/order-types";
 import { getOrderView } from "@/lib/orders";
 import { formatPrice } from "@/lib/sample-data";
@@ -48,7 +49,7 @@ function headline(order: OrderView): { eyebrow: string; title: string; body: str
       : {
           eyebrow: "Awaiting confirmation",
           title: "Confirming your payment",
-          body: "We haven’t received confirmation from our payment provider yet. This usually takes a few seconds.",
+          body: "We’re waiting for our payment provider to confirm your payment. This usually takes a few seconds; your pieces are set aside meanwhile.",
           tone: "wait",
         };
   }
@@ -83,6 +84,8 @@ async function Order({ publicId }: { publicId: string }) {
   if (!order) notFound();
 
   const h = headline(order);
+  // Pending with no word from Stripe yet (a delayed bank payment shows "processing" instead).
+  const awaiting = order.status === "pending" && order.paymentStatus === "unpaid";
   const address = order.shipping?.address;
 
   return (
@@ -92,25 +95,29 @@ async function Order({ publicId }: { publicId: string }) {
           {h.eyebrow}
         </p>
         <h1 className="heading-display">{h.title}</h1>
-        <p className="max-w-prose text-muted" role={h.tone === "ok" ? undefined : "status"}>
+        {/* Always a live region, so the switch from "Confirming" to "Thank you" is announced when the page refreshes. */}
+        <p role="status" className="max-w-prose text-muted">
           {h.body}
         </p>
-        <div className="mt-2 flex flex-wrap gap-3">
-          {h.tone === "wait" && order.paymentStatus === "unpaid" ? (
-            <Link href={`/checkout/orders/${order.publicId}`} className="btn btn-primary" prefetch={false}>
-              Check again
-            </Link>
-          ) : null}
-          {h.tone === "stop" ? (
-            <Link href="/bag" className="btn btn-primary">
-              Return to bag
-            </Link>
-          ) : (
-            <Link href="/arrivals" className={h.tone === "ok" ? "btn btn-primary" : "btn btn-secondary"}>
+        {awaiting ? (
+          <AwaitingConfirmation>
+            <Link href="/arrivals" className="btn btn-secondary">
               Continue shopping
             </Link>
-          )}
-        </div>
+          </AwaitingConfirmation>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-3">
+            {h.tone === "stop" ? (
+              <Link href="/bag" className="btn btn-primary">
+                Return to bag
+              </Link>
+            ) : (
+              <Link href="/arrivals" className={h.tone === "ok" ? "btn btn-primary" : "btn btn-secondary"}>
+                Continue shopping
+              </Link>
+            )}
+          </div>
+        )}
       </header>
 
       <div className="container-page pb-section">
