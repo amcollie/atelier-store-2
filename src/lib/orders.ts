@@ -7,6 +7,7 @@ import { revalidateTag } from "next/cache";
 import type Stripe from "stripe";
 
 import { db } from "@/db";
+import { isConstraint } from "@/db/errors";
 import { type OrderShipping, orders } from "@/db/schema";
 import { lineKey, loadLiveProducts, resolveCart } from "@/lib/cart";
 import type { CartRef } from "@/lib/cart-types";
@@ -425,11 +426,4 @@ function toShipping(session: Stripe.Checkout.Session): OrderShipping | null {
       country: a.country ?? null,
     },
   };
-}
-
-function isConstraint(error: unknown, name: string): boolean {
-  for (let e: unknown = error; e && typeof e === "object"; e = (e as { cause?: unknown }).cause) {
-    if ((e as { constraint?: string }).constraint === name) return true;
-  }
-  return false;
 }

@@ -14,12 +14,12 @@ export const NOT_ALLOWED: AdminActionState = { status: "error", message: "Not al
  *
  *   export const saveThing = adminAction(async (admin, prev, formData) => { … });
  */
-export function adminAction(
-  handler: (admin: CurrentUser, prev: AdminActionState, formData: FormData) => Promise<AdminActionState>,
+export function adminAction<S extends AdminActionState = AdminActionState>(
+  handler: (admin: CurrentUser, prev: S, formData: FormData) => Promise<S>,
 ) {
-  return async (prev: AdminActionState, formData: FormData): Promise<AdminActionState> => {
+  return async (prev: S, formData: FormData): Promise<S> => {
     const admin = await getAdminForAction();
-    if (!admin) return NOT_ALLOWED;
+    if (!admin) return NOT_ALLOWED as S;
     return handler(admin, prev, formData);
   };
 }

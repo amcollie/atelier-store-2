@@ -1,8 +1,9 @@
-// Loads the initial catalogue. Idempotent: categories, products and stock are
-// upserted by their natural keys, so it is safe to re-run.
+// Loads the initial catalogue into an empty database. Idempotent and insert-only:
+// rows that already exist (matched by natural key) are left alone, so re-running
+// it never overwrites what admins changed in /admin.
 // Run with `pnpm db:seed` (reads DATABASE_URL from .env.local).
 
-import { sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "./index";
 import { categories, products, productStock } from "./schema";
@@ -12,12 +13,18 @@ async function upsertCategory(values: typeof categories.$inferInsert) {
   const [row] = await db
     .insert(categories)
     .values(values)
-    .onConflictDoUpdate({
-      target: [categories.parentId, categories.slug],
-      set: { name: values.name, sortOrder: values.sortOrder },
-    })
+    .onConflictDoNothing({ target: [categories.parentId, categories.slug] })
     .returning({ id: categories.id });
-  return row.id;
+  if (row) return row.id;
+  const existing = await db.query.categories.findFirst({
+    where: and(
+      values.parentId == null ? isNull(categories.parentId) : eq(categories.parentId, values.parentId),
+      eq(categories.slug, values.slug),
+    ),
+    columns: { id: true },
+  });
+  if (!existing) throw new Error(`Category "${values.slug}" exists but could not be read back.`);
+  return existing.id;
 }
 
 async function main() {
@@ -34,6 +41,8 @@ async function main() {
   }
 
   const now = Date.now();
+  let added = 0;
+  let skipped = 0;
   for (const [i, { category, quantity, image, ...p }] of seedProducts.entries()) {
     const categoryId = subCategoryIds.get(category.join("/"));
     if (!categoryId) throw new Error(`${p.slug}: unknown sub-category "${category.join("/")}"`);
@@ -52,16 +61,18 @@ async function main() {
     const [row] = await db
       .insert(products)
       .values(values)
-      .onConflictDoUpdate({ target: products.slug, set: { ...values, updatedAt: sql`now()` } })
+      .onConflictDoNothing({ target: products.slug })
       .returning({ id: products.id });
+    if (!row) {
+      skipped += 1;
+      continue;
+    }
 
-    await db
-      .insert(productStock)
-      .values({ productId: row.id, quantity })
-      .onConflictDoUpdate({ target: productStock.productId, set: { quantity, updatedAt: sql`now()` } });
+    await db.insert(productStock).values({ productId: row.id, quantity }).onConflictDoNothing();
+    added += 1;
   }
 
-  console.log(`Seeded ${subCategoryIds.size} sub-categories and ${seedProducts.length} products.`);
+  console.log(`Seed: ${subCategoryIds.size} sub-categories checked; ${added} products added, ${skipped} already present (left unchanged).`);
 }
 
 main().catch((error) => {

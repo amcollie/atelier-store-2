@@ -9,3 +9,6 @@ export type AdminActionState = {
 };
 
 export const IDLE: AdminActionState = { status: "idle" };
+
+/** Stock saves also return the quantity now stored, so the form can retry against it after a conflict. */
+export type StockActionState = AdminActionState & { quantity?: number };
