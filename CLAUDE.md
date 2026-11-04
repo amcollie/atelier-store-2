@@ -33,7 +33,7 @@ Next.js 16.4 (App Router, `src/` dir), React 19, TypeScript, Tailwind CSS v4, Be
 
 All tokens and primitives live in `src/app/globals.css`; there is no `tailwind.config`. Colours are runtime CSS variables on `:root`, mapped into Tailwind via `@theme inline`, so `.theme-inverse` re-scopes a subtree (footer, dark bands) by swapping the variables. Use semantic utilities (`bg-paper`, `text-ink`, `text-muted`, `border-line`, `text-caption`, `heading-*`, `eyebrow`, `container-page`, `grid-products`, `media-frame`) rather than raw colours or Tailwind's default palette. Buttons/links/fields are component classes (`btn btn-primary`, `link`, `field`). Corners are square everywhere. Breakpoints: `md` 768, `lg` 1024, `xl` 1440.
 
-Products come from Postgres through `src/lib/catalog.ts` (see Database conventions below). Marketing content (navigation, hero, collections, editorial, services) is still placeholder data in `src/lib/sample-data.ts`. Unsplash images are allowed via `images.remotePatterns` in `next.config.ts`; gallery "detail" shots are focal-point crops of the same photo. The announcement bar, `SiteHeader` and `SiteFooter` are rendered once in `src/app/layout.tsx`; each page supplies its own `<main id="main" className="flex-1">`. Client components are kept to `SiteHeader`, `NewsletterForm`, `ProductPurchase`, `AuthForm` and `BagLines` (whose quantity buttons use `aria-disabled`, not `disabled`, so keyboard focus survives a save or the stock limit). `SiteHeader` takes the bag link as a server-rendered `bag` slot (`CartBagLink` in `<Suspense>`), because the count reads the cart cookie. Sample photos were checked for visible third-party logos; keep it that way when swapping images.
+Products come from Postgres through `src/lib/catalog.ts` (see Database conventions below). Marketing content (navigation, hero, collections, editorial, services) is still placeholder data in `src/lib/sample-data.ts`. Unsplash images are allowed via `images.remotePatterns` in `next.config.ts`; gallery "detail" shots are focal-point crops of the same photo. The announcement bar, `SiteHeader` and `SiteFooter` are rendered once in `src/app/layout.tsx`; each page supplies its own `<main id="main" className="flex-1">`. Client components are kept to `SiteHeader`, `NewsletterForm`, `ProductPurchase`, `AuthForm`, `BagLines` and `CheckoutButton` (whose quantity buttons use `aria-disabled`, not `disabled`, so keyboard focus survives a save or the stock limit). `SiteHeader` takes the bag link as a server-rendered `bag` slot (`CartBagLink` in `<Suspense>`), because the count reads the cart cookie. Sample photos were checked for visible third-party logos; keep it that way when swapping images.
 
 With Cache Components on, product slugs come from `generateStaticParams`; an unknown slug renders `not-found.tsx` with a 200 status plus `noindex` (documented Next 16 behaviour; `dynamicParams` is unavailable).
 
@@ -41,7 +41,7 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 
 - **Migrations:** change the schema with `db:generate` + `db:migrate` and commit the SQL in `drizzle/`. Don't use `db:push` for real schema changes.
 - **Table definitions:** tables live in their own file under `src/db/` (catalogue: `catalog-schema.ts`) and are re-exported from `schema.ts`. Use integer identity primary keys, snake_case column names with camelCase TS keys, and `timestamptz` timestamps.
-- **Scope:** the v1 catalogue has only products, categories and stock (plus the generated auth tables and the order tables; see Authentication and Orders). The cart lives in a cookie, not a table (see Cart). Orders have tables (see Orders), but Stripe checkout isn't built yet. Don't add reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
+- **Scope:** the v1 catalogue has only products, categories and stock (plus the generated auth tables and the order tables; see Authentication and Orders). The cart lives in a cookie, not a table (see Cart). Orders and Stripe Checkout exist (see Orders and Checkout). Don't add refunds, tax, discounts, order history, reviews, wishlists or product variants unless asked. Until variants exist, `products.sizes` (jsonb) is a stopgap and the gallery is a jsonb column, not a separate images table.
 - **Category tree:**
   - It is two levels deep. The top categories are Women, Men and Unisex (`parent_id` null); every other category is a sub-category of one of them.
   - A product belongs to exactly one **sub-category**, never a top category. Items that fit both or neither go under Unisex.
@@ -70,7 +70,7 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 
 ## Orders
 
-Tables in `src/db/order-schema.ts` (migration `drizzle/0002_orders.sql`), for the planned Stripe Checkout. No code writes to them yet.
+Tables in `src/db/order-schema.ts` (migration `drizzle/0002_orders.sql`). Only `src/lib/orders.ts` (`server-only`) writes them.
 
 - **`orders`:**
   - Every order belongs to a signed-in user (`user_id` → `user.id`, `ON DELETE restrict`, so a user with orders can't be deleted).
@@ -87,7 +87,42 @@ Tables in `src/db/order-schema.ts` (migration `drizzle/0002_orders.sql`), for th
   - `line_total_cents = unit_price_cents * quantity`, with one line per product and size.
   - Items cascade with their order; products with order lines can't be deleted (restrict).
 - **`stripe_events`:** processed webhook event ids (`evt_…`) for deduplication. Insert with `ON CONFLICT DO NOTHING`. `order_id` is set to null if the order is deleted.
-- **Writes:** neon-http has no interactive transactions, so status changes and stock moves must each be a single conditional statement (`UPDATE … WHERE status = …`) or a `db.batch`.
+- **Writes:** neon-http has no interactive transactions, so status changes and stock moves are each one statement.
+  - `createPendingOrder` inserts the order and its items and holds the stock in one CTE. `product_stock`'s `>= 0` check aborts it on oversell, which keeps concurrent buyers safe.
+  - `releaseOrder` cancels a pending order and restocks in one CTE guarded by `status = 'pending'`, so replays release nothing.
+  - Stock changes call `revalidateTag("catalog", "max")`.
+
+## Checkout
+
+Stripe Checkout (hosted), USD and US shipping only, with no tax (Stripe Tax needs a registration) and complimentary shipping.
+
+- **Flow:**
+  - `CheckoutButton` calls `startCheckout` in `src/app/checkout/actions.ts`, which:
+    - requires a signed-in user;
+    - settles stale holds and the shopper's earlier unpaid checkouts;
+    - runs `createPendingOrder`, which re-resolves the bag cookie against live prices and stock. Any reduced or unavailable line returns `changed`, the corrected bag is saved, and the shopper reviews it.
+  - It then creates the Checkout Session with `price_data` built from the order's database prices and redirects to Stripe.
+  - If session creation fails, the hold is released.
+  - Sessions last 31 minutes, which is the stock hold.
+- **Prices:** never accept prices, totals or payment status from the client. Line items come from `order_items`. An order is marked paid only when Stripe's `amount_total` and `currency` equal the order's.
+- **Only Stripe's data settles an order:** `syncOrderFromSession` in `src/lib/orders.ts` is shared by the webhook and the return routes, and is given a session from a verified event or `stripe.checkout.sessions.retrieve`.
+  - It's idempotent: each change is a conditional update.
+
+  | Session state | Result |
+  |---|---|
+  | complete, paid | paid |
+  | complete, unpaid | processing, hold kept |
+  | `async_payment_failed` | canceled/failed, restocked |
+  | expired | canceled/expired, or canceled/canceled when the shopper backed out; restocked |
+
+- **Routes:**
+  - `/api/stripe/webhook` verifies the signature with `Stripe.webhooks.constructEvent` on the raw body and skips event ids already in `stripe_events`. It handles `checkout.session.completed`, `async_payment_succeeded`, `async_payment_failed` and `expired`, and returns 500 on errors so Stripe retries.
+  - `/checkout/complete` (the `success_url`) retrieves the session server-side, syncs it, clears the bag if the session completed, and redirects to `/checkout/orders/[publicId]`. Reaching it alone never marks an order paid.
+  - `/checkout/cancel` (the `cancel_url`) expires the session, restocks, and returns to `/bag?checkout=canceled`.
+  - `/checkout/orders/[publicId]` is owner-only (`notFound()` otherwise) and shows the order's database state.
+- **Backstop:** `reconcileStaleOrders` (run on each checkout start) asks Stripe about unpaid orders whose hold lapsed, in case an expiry webhook was missed.
+- **Stripe client:** `getStripe()` in `src/lib/stripe.ts` is created lazily, so builds need no keys, and refuses live keys outside production. Redirect URLs come from `appUrl()` (`BETTER_AUTH_URL`), never the Host header. The API version is pinned to the SDK's.
+- **Local testing:** `stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired --forward-to localhost:3000/api/stripe/webhook` prints the `whsec_…` to use as `STRIPE_WEBHOOK_SECRET` (current CLI versions require `--events`).
 
 ## Authentication
 
@@ -101,7 +136,7 @@ Tables in `src/db/order-schema.ts` (migration `drizzle/0002_orders.sql`), for th
 - **Schema:** `src/db/auth-schema.ts` is generated by `pnpm auth:generate`. Never hand-edit it, and regenerate it after adding plugins, then run `db:generate` + `db:migrate`. It's an exception to the table conventions above: text ids and plain `timestamp` columns, stored as UTC. A raw SQL client in a non-UTC time zone shows these timestamps shifted; Drizzle reads them correctly.
 - **Session reads:** go through `src/lib/session.ts` (`server-only`): `getCurrentUser()` (React-cached per request), `requireUser()` and `requireAdmin()`.
   - These read the request, so call them only inside `<Suspense>`, never in `'use cache'`.
-  - Pages and server actions must call them themselves. `src/proxy.ts` only checks that a session cookie exists on `/account` and `/admin`, and is not a security boundary.
+  - Pages and server actions must call them themselves. `src/proxy.ts` only checks that a session cookie exists on `/account`, `/admin` and `/checkout/orders`, and is not a security boundary.
 - **Account area:** each `/account/*` page renders `AccountShell` (`src/components/account-shell.tsx`) with its own `current` section, then calls `requireUser()` inside `<Suspense>`. The pages are an Overview and read-only Account details. To add a page, add it to `sections` in the shell. There's no order history yet.
 - **Admin routes:** `/admin` is admin-only. Signed-out visitors go to sign-in, and signed-in non-admins get a 404, so admin pages carry no identifying title. The plugin's `/api/auth/admin/*` endpoints check the role themselves.
 - **Forms:** `AuthForm` signs in and signs up through `authClient`, which calls the `/api/auth` HTTP endpoints.
@@ -120,4 +155,4 @@ The request path for auth is: `AuthForm` → `authClient` (`src/lib/auth-client.
 
 ## Environment
 
-Copy `.env.example` to `.env.local`. `drizzle.config.ts` loads `.env.local` explicitly via dotenv; the app gets it from Next.js. Variables: `DATABASE_URL` (Neon pooled connection string), `STUDIO_DATABASE_URL` (used only by `db:studio`; a Neon dev branch or limited role, never production, and Studio refuses to start without it), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL` (used by the auth client). `.gitignore` ignores `.env*` except `.env.example`.
+Copy `.env.example` to `.env.local`. `drizzle.config.ts` loads `.env.local` explicitly via dotenv; the app gets it from Next.js. Variables: `DATABASE_URL` (Neon pooled connection string), `STRIPE_SECRET_KEY` (a restricted `rk_test_…` key from a Stripe sandbox, with write access to Checkout Sessions), `STRIPE_WEBHOOK_SECRET` (the endpoint's `whsec_…`), `STUDIO_DATABASE_URL` (used only by `db:studio`; a Neon dev branch or limited role, never production, and Studio refuses to start without it), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL` (used by the auth client). `.gitignore` ignores `.env*` except `.env.example`.

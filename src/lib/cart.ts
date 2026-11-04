@@ -81,7 +81,13 @@ export async function writeCartRefs(refs: CartRef[]): Promise<void> {
   });
 }
 
+/** Server actions and route handlers only: empties the bag (after a completed checkout). */
+export async function clearCart(): Promise<void> {
+  (await cookies()).delete(COOKIE);
+}
+
 export type LiveProduct = {
+  id: number;
   slug: string;
   name: string;
   priceCents: number;
@@ -96,13 +102,14 @@ export async function loadLiveProducts(slugs: string[]): Promise<Map<string, Liv
   if (unique.length === 0) return new Map();
   const rows = await db.query.products.findMany({
     where: inArray(products.slug, unique),
-    columns: { slug: true, name: true, priceCents: true, imageUrl: true, imageAlt: true, sizes: true },
+    columns: { id: true, slug: true, name: true, priceCents: true, imageUrl: true, imageAlt: true, sizes: true },
     with: { stock: { columns: { quantity: true } } },
   });
   return new Map(
     rows.map((r) => [
       r.slug,
       {
+        id: r.id,
         slug: r.slug,
         name: r.name,
         priceCents: r.priceCents,

@@ -3,13 +3,15 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { BagLines } from "@/components/bag-lines";
+import { CheckoutButton } from "@/components/checkout-button";
 import { getCart } from "@/lib/cart";
 import { SHIPPING_COPY } from "@/lib/catalog";
 import { formatPrice } from "@/lib/sample-data";
+import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Shopping bag", robots: { index: false } };
 
-export default function BagPage() {
+export default function BagPage({ searchParams }: PageProps<"/bag">) {
   return (
     <main id="main" className="flex-1">
       <header className="container-page stack gap-4 pt-8 pb-8 md:pt-10 md:pb-10 lg:pt-12">
@@ -35,14 +37,20 @@ export default function BagPage() {
       </header>
 
       <Suspense fallback={<BagSkeleton />}>
-        <BagContents />
+        <BagContents searchParams={searchParams} />
       </Suspense>
     </main>
   );
 }
 
-async function BagContents() {
-  const cart = await getCart();
+async function BagContents({ searchParams }: { searchParams: PageProps<"/bag">["searchParams"] }) {
+  const [cart, user, params] = await Promise.all([getCart(), getCurrentUser(), searchParams]);
+  const canceled = params.checkout === "canceled";
+  const canceledNotice = canceled ? (
+    <p className="border-l-2 border-line-strong py-1 pl-4 text-meta" role="status">
+      Checkout canceled. You haven&rsquo;t been charged, and your bag is just as you left it.
+    </p>
+  ) : null;
 
   if (cart.lines.length === 0) {
     return (
@@ -88,6 +96,7 @@ async function BagContents() {
           <h2 id="bag-items-title" className="sr-only">
             Items
           </h2>
+          {canceledNotice ? <div className="mb-6">{canceledNotice}</div> : null}
           {notice ? (
             <p className="mb-6 border-l-2 border-warning py-1 pl-4 text-meta text-warning" role="status">
               {notice}
@@ -117,9 +126,29 @@ async function BagContents() {
               <p className="text-meta text-muted">Unavailable items aren&rsquo;t included in the subtotal.</p>
             ) : null}
             <p className="text-meta text-muted">{SHIPPING_COPY}</p>
-            <button type="button" className="btn btn-primary btn-block" disabled>
-              Checkout coming soon
-            </button>
+            {excluded > 0 ? (
+              <div className="stack gap-3">
+                <button type="button" className="btn btn-primary btn-block" disabled>
+                  Checkout
+                </button>
+                <p className="text-meta text-warning">Remove unavailable items to check out.</p>
+              </div>
+            ) : user ? (
+              <CheckoutButton />
+            ) : (
+              <div className="stack gap-3">
+                <Link href={`/sign-in?callbackURL=${encodeURIComponent("/bag")}`} className="btn btn-primary btn-block">
+                  Sign in to check out
+                </Link>
+                <p className="text-meta text-muted">
+                  New to Atelier?{" "}
+                  <Link href={`/sign-up?callbackURL=${encodeURIComponent("/bag")}`} className="link">
+                    Create an account
+                  </Link>
+                  . Your bag stays as it is.
+                </p>
+              </div>
+            )}
             <Link href="/arrivals" className="link self-center text-meta">
               Continue shopping
             </Link>
