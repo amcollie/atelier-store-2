@@ -50,7 +50,7 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 - **Money and stock:**
   - Prices are integer cents. `formatPrice` shows whole dollars as "$480" and anything else with cents ("$1,250.50"); it never rounds, because the shown price must equal what Stripe charges.
   - Stock is a quantity in `product_stock`, one row per product. The `in_stock | low_stock | out_of_stock` status is derived in code (low at 5 or fewer) and never stored.
-- **Reads:** all public catalogue reads go through `src/lib/catalog.ts` (`server-only`), as `'use cache'` functions with `cacheTag("catalog")`. Admin reads live in `src/lib/admin/` and are uncached, so admins always see current data. After writing catalogue data, call `updateTag("catalog")` (in server actions) or `revalidateTag("catalog", "max")` (elsewhere). An uncached database read outside `<Suspense>` breaks prerendering.
+- **Reads:** all public catalogue reads go through `src/lib/catalog.ts` (`server-only`), as `'use cache'` functions with `cacheTag("catalog")`. Admin reads live in `src/lib/admin/` and are uncached, so admins always see current data. After writing catalogue data, call `updateTag("catalog")` (in server actions) or `revalidateTag("catalog", { expire: 0 })` (elsewhere, so the next visitor gets fresh data instead of a stale page). An uncached database read outside `<Suspense>` breaks prerendering.
 - **Types:** shared shapes live in `src/lib/catalog-types.ts`, and client components import types from there.
 - **Seed:** `src/db/seed.ts` is idempotent and insert-only (`onConflictDoNothing` by natural key). It fills an empty database and never overwrites what admins changed. Once a database is live, `/admin` is the source of truth for products, and `seed-data.ts` only describes a fresh install.
 - **Build:** `next build` reads product slugs from the database, so the database must be reachable at build time.
@@ -90,7 +90,7 @@ Tables in `src/db/order-schema.ts` (migration `drizzle/0002_orders.sql`). Only `
 - **Writes:** neon-http has no interactive transactions, so status changes and stock moves are each one statement.
   - `createPendingOrder` inserts the order and its items and holds the stock in one CTE. `product_stock`'s `>= 0` check aborts it on oversell, which keeps concurrent buyers safe.
   - `releaseOrder` cancels a pending order and restocks in one CTE guarded by `status = 'pending'`, so replays release nothing.
-  - Stock changes call `revalidateTag("catalog", "max")`.
+  - Stock changes call `refreshStockPages()` (`revalidateTag("catalog", { expire: 0 })`), so the first product-page view after a hold or release already shows the new availability. `"max"` would serve one stale view first.
 
 ## Checkout
 

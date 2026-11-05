@@ -52,6 +52,17 @@ export type CreateOrderResult =
 const newPublicId = () => randomBytes(12).toString("base64url");
 
 /**
+ * Stock changed: expire the cached catalogue now. With "max" the next visitor
+ * would still get the old status (a "Sold out" page while units were back in
+ * stock). `{ expire: 0 }` makes that request wait for fresh data. This module
+ * runs from route handlers (webhook, checkout returns) as well as actions, so
+ * updateTag isn't an option.
+ */
+function refreshStockPages() {
+  revalidateTag("catalog", { expire: 0 });
+}
+
+/**
  * Revalidates the cart against live prices and stock, then records a pending
  * order and holds its stock. Prices and totals come only from Postgres.
  */
@@ -139,7 +150,7 @@ export async function createPendingOrder(userId: string, refs: CartRef[]): Promi
     return { ok: false, reason: "out_of_stock" };
   }
 
-  revalidateTag("catalog", "max");
+  refreshStockPages();
   return { ok: true, order: { id: row.id, publicId, totalCents: subtotal, lines } };
 }
 
@@ -180,7 +191,7 @@ export async function releaseOrder(orderId: number, reason: CancelReason): Promi
     SELECT (SELECT count(*) FROM canceled)::int AS released
   `);
   const released = (result.rows[0]?.released ?? 0) > 0;
-  if (released) revalidateTag("catalog", "max");
+  if (released) refreshStockPages();
   return released;
 }
 
