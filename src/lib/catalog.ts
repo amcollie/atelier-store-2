@@ -6,7 +6,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import { db } from "@/db";
 import { categories, products } from "@/db/schema";
 import { LOW_STOCK_THRESHOLD } from "@/lib/admin/stock-tone";
-import type { CategoryRef, Product } from "@/lib/catalog-types";
+import type { CategoryRef, Product, ProductSize } from "@/lib/catalog-types";
 
 // Catalogue reads. Every query is cached under the "catalog" tag so pages stay
 // prerendered; call updateTag/revalidateTag("catalog") after changing data.
@@ -28,8 +28,15 @@ type ProductRow = NonNullable<
   Awaited<ReturnType<typeof db.query.products.findFirst<{ with: typeof withRelations }>>>
 >;
 
-function toStock(quantity: number): Product["stock"] {
-  if (quantity <= 0) return { status: "out_of_stock" };
+/**
+ * The shopper-facing state: sold out at 0, low at LOW_STOCK_THRESHOLD or fewer.
+ * A sized product with every size switched off can't be bought either, so it
+ * reads as sold out rather than "In stock" over a row of struck-out sizes.
+ */
+function toStock(quantity: number, sizes: ProductSize[] | null): Product["stock"] {
+  if (quantity <= 0 || (sizes && sizes.length > 0 && !sizes.some((s) => s.available))) {
+    return { status: "out_of_stock" };
+  }
   if (quantity <= LOW_STOCK_THRESHOLD) return { status: "low_stock", quantity };
   return { status: "in_stock" };
 }
@@ -51,7 +58,7 @@ function toProduct(row: ProductRow): Product {
     badge: row.badge ?? undefined,
     styleCode: row.styleCode,
     color: row.color,
-    stock: toStock(row.stock?.quantity ?? 0),
+    stock: toStock(row.stock?.quantity ?? 0, row.sizes),
     sizes: row.sizes ?? undefined,
     image: { src: row.imageUrl, alt: row.imageAlt },
     gallery: row.gallery,

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { StockStatus } from "@/components/stock-status";
 import type { Product } from "@/lib/catalog-types";
 import { formatPrice } from "@/lib/sample-data";
 
@@ -31,6 +32,8 @@ export function ProductCard({ product }: { product: Product }) {
           </Link>
         </h3>
         <p className={`font-medium ${soldOut ? "text-muted" : ""}`}>{formatPrice(product.priceCents)}</p>
+        {/* Sold out is the image badge; only the low state needs a line here. */}
+        {product.stock.status === "low_stock" ? <StockStatus stock={product.stock} compact /> : null}
       </div>
     </article>
   );

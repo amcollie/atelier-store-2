@@ -132,7 +132,7 @@ function BagLineRow({ line, onAnnounce }: { line: CartLine; onAnnounce: (text: s
         {line.issue === "sold_out" ? (
           <StockStatus stock={{ status: "out_of_stock" }} />
         ) : !unavailable && line.lowStock ? (
-          <StockStatus stock={{ status: "low_stock", quantity: line.lowStock }} />
+          <StockStatus stock={{ status: "low_stock", quantity: line.lowStock }} compact />
         ) : null}
         {issue ? (
           <p className={`text-meta ${unavailable ? "text-muted" : "text-warning"}`}>{issue}</p>
