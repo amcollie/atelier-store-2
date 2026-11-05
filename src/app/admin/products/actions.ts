@@ -4,16 +4,11 @@ import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { adminAction } from "@/lib/admin/action";
-import type { AdminActionState, StockActionState } from "@/lib/admin/action-types";
-import { createProduct, setStock, updateProduct } from "@/lib/admin/catalog";
-import {
-  createProductSchema,
-  parseWith,
-  productFormInput,
-  stockFormInput,
-  stockSchema,
-  updateProductSchema,
-} from "@/lib/admin/schemas";
+import type { AdminActionState } from "@/lib/admin/action-types";
+import { createProduct, updateProduct } from "@/lib/admin/catalog";
+import { createProductSchema, parseWith, productFormInput, updateProductSchema } from "@/lib/admin/schemas";
+
+// Stock saves live in src/app/admin/stock/actions.ts (shared with this route's edit page).
 
 // Every action is wrapped in adminAction (role checked per call) and re-parses
 // its input with zod; the client's own validation is never trusted. Catalogue
@@ -46,23 +41,4 @@ export const updateProductAction = adminAction<AdminActionState>(async (_admin, 
 
   updateTag("catalog");
   return { status: "ok", message: "Product saved." };
-});
-
-export const setStockAction = adminAction<StockActionState>(async (_admin, _prev, formData) => {
-  const parsed = parseWith(stockSchema, stockFormInput(formData));
-  if (!parsed.ok) return { status: "error", message: parsed.fieldErrors.quantity ?? CHECK_FIELDS, fieldErrors: parsed.fieldErrors };
-
-  const { productId, expected, quantity } = parsed.data;
-  const result = await setStock(productId, expected, quantity);
-  if (!result.ok) {
-    if (result.reason === "not_found") return { status: "error", message: "This product no longer exists." };
-    return {
-      status: "error",
-      quantity: result.quantity,
-      message: `Stock changed to ${result.quantity} since you loaded this page (a checkout may have started or finished). Check the number and save again.`,
-    };
-  }
-
-  updateTag("catalog");
-  return { status: "ok", quantity: result.quantity, message: `Saved: ${result.quantity} available.` };
 });

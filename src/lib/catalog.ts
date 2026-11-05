@@ -5,12 +5,13 @@ import { cacheLife, cacheTag } from "next/cache";
 
 import { db } from "@/db";
 import { categories, products } from "@/db/schema";
+import { LOW_STOCK_THRESHOLD } from "@/lib/admin/stock-tone";
 import type { CategoryRef, Product } from "@/lib/catalog-types";
 
 // Catalogue reads. Every query is cached under the "catalog" tag so pages stay
 // prerendered; call updateTag/revalidateTag("catalog") after changing data.
 
-export const LOW_STOCK_THRESHOLD = 5;
+export { LOW_STOCK_THRESHOLD };
 
 export const SHIPPING_COPY =
   "Complimentary standard shipping on every order, delivered in 2–4 business days. Returns are free within 30 days in original condition with tags attached.";

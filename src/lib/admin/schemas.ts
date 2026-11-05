@@ -59,12 +59,20 @@ const imageUrl = z
   .min(1, "Enter an image URL.")
   .refine(isAllowedImageUrl, `Use an https image URL from ${ALLOWED_IMAGE_HOSTS}.`);
 
+// Digits only. z.coerce.number() would turn "" into 0 and accept "1e3",
+// " 12 " or "0x10", so a blank stock field would silently save as zero.
 const wholeNumber = (what: string, max: number) =>
-  z.coerce
-    .number({ error: `Enter ${what} as a whole number.` })
-    .int(`Enter ${what} as a whole number.`)
-    .min(0, `${what[0].toUpperCase()}${what.slice(1)} can't be negative.`)
-    .max(max, `Use ${max.toLocaleString("en-US")} or less.`);
+  z
+    .string({ error: `Enter ${what}.` })
+    .trim()
+    .min(1, `Enter ${what}.`)
+    .refine((v) => !v.startsWith("-"), `${what[0].toUpperCase()}${what.slice(1)} can't be negative.`)
+    .regex(/^\d+$/, `Enter ${what} as a whole number.`)
+    .transform(Number)
+    .pipe(z.number().max(max, `Use ${max.toLocaleString("en-US")} or less.`));
+
+/** A database id or a stock count echoed back from a hidden field: digits only. */
+const formInteger = z.string().regex(/^\d{1,9}$/).transform(Number);
 
 /** "$1,320.50" → 132050. Dollars in, integer cents out, never a float. */
 const price = z.string().transform((raw, ctx) => {
@@ -204,8 +212,8 @@ export const createProductSchema = z.object({
 });
 
 export const stockSchema = z.object({
-  productId: z.coerce.number().int().positive(),
-  expected: z.coerce.number().int().min(0),
+  productId: formInteger.pipe(z.number().positive()),
+  expected: formInteger.pipe(z.number().max(PRODUCT_LIMITS.maxStock)),
   quantity: wholeNumber("the quantity", PRODUCT_LIMITS.maxStock),
 });
 

@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { AdminPage } from "@/components/admin/admin-page";
 import { type AdminProductRow, listCategoryOptions, listProducts } from "@/lib/admin/catalog";
-import { LOW_STOCK_THRESHOLD } from "@/lib/catalog";
+import { stockTone } from "@/lib/admin/stock-tone";
 import { formatPrice } from "@/lib/sample-data";
 
 // Blocks on the role check; see src/app/admin/layout.tsx.
@@ -70,12 +70,6 @@ async function ProductList({ searchParams }: { searchParams: PageProps<"/admin/p
       )}
     </div>
   );
-}
-
-function stockTone(quantity: number) {
-  if (quantity <= 0) return { label: "Sold out", dot: "bg-muted", text: "text-muted" };
-  if (quantity <= LOW_STOCK_THRESHOLD) return { label: `${quantity} available · low`, dot: "bg-warning", text: "text-warning" };
-  return { label: `${quantity} available`, dot: "bg-success", text: "text-ink" };
 }
 
 function ProductRow({ product: p }: { product: AdminProductRow }) {

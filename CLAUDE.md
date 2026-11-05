@@ -151,7 +151,13 @@ Stripe Checkout (hosted), USD and US shipping only, with no tax (Stripe Tax need
   - **Slug:** fixed after creation, because store URLs and past orders' links use it.
   - **Availability:** per-size `available` flags (stored in `products.sizes`) and the available quantity. Stock is shared by all sizes.
   - **Stock saves:** `setStock(productId, expected, quantity)` writes only if stock still equals what the admin saw, because checkouts hold stock by decrementing the same number. A conflict returns the current value. The edit page shows units held by pending orders.
-  - **`ProductForm`:** submits from `onSubmit` inside `startTransition`, not `<form action>`, because React resets a form after its action finishes and would wipe the admin's input after a rejected field.
+  - **`ProductForm` and `StockForm`:** submit from `onSubmit` inside `startTransition`, not `<form action>`, because React resets a form after its action finishes and would wipe the admin's input after a rejected field.
+- **Admin stock (`/admin/stock`):** every product with **available** (`product_stock.quantity`, the only stock number; admins set it), **held** (units in pending orders, already subtracted from available) and **on hand** (available + held), filterable by sub-category and "low or sold out".
+  - `listStock()` in `src/lib/admin/catalog.ts` gets held units for all products in one grouped query (`heldByProduct`); don't query per row.
+  - Each row is a compact `StockForm` posting to `setStockAction` in `src/app/admin/stock/actions.ts` (shared with the product edit page). The same compare-and-set applies; after a conflict the form adopts the server's number, and a newer render only re-seeds a row the admin hasn't edited.
+  - Stock numbers are digits only (`wholeNumber` in `schemas.ts`); `z.coerce.number()` would accept "" as 0 and "1e3".
+  - Saves call `updateTag("catalog")` for product and collection pages; the bag and checkout read stock live, and `product_stock`'s `>= 0` check still stops oversell.
+  - `LOW_STOCK_THRESHOLD` and `stockTone` live in `src/lib/admin/stock-tone.ts`, shared by the store and admin, so "low" means the same everywhere. There's no stock history or audit log.
 - **Forms:** `AuthForm` signs in and signs up through `authClient`, which calls the `/api/auth` HTTP endpoints.
   - Don't move these calls into server actions: Better Auth only rate-limits requests that pass through its handler, and `auth.api.*` calls skip the limits. The limits are on in production only, with 3 attempts per 10 seconds on sign-in and sign-up.
   - Sign-out stays a server action in `src/app/(auth)/actions.ts`.

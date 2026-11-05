@@ -1,12 +1,14 @@
 import "server-only";
 
-import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { isConstraint } from "@/db/errors";
 import { categories, orderItems, orders, products, productStock } from "@/db/schema";
 import type { ImageAsset, ProductSize } from "@/lib/catalog-types";
 import { assertAdmin } from "@/lib/session";
+
+import { LOW_STOCK_THRESHOLD } from "./stock-tone";
 
 import type { CreateProductInput, ProductValues } from "./schemas";
 
@@ -94,19 +96,71 @@ export async function getProductForEdit(id: number): Promise<ProductForEdit | un
     gallery: p.gallery,
     sizes: p.sizes,
     quantity: p.stock?.quantity ?? 0,
-    held: await heldQuantity(p.id),
+    held: (await heldByProduct([p.id])).get(p.id) ?? 0,
     updatedAt: p.updatedAt,
   };
 }
 
-/** Units in open checkouts (pending orders hold their stock until paid, failed or expired). */
-async function heldQuantity(productId: number): Promise<number> {
-  const [row] = await db
-    .select({ held: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int` })
+/**
+ * Units in open checkouts per product, in one grouped query (pending orders
+ * hold their stock until paid, failed or expired). Without `productIds` it
+ * covers every product. Products with nothing held are absent from the map.
+ */
+async function heldByProduct(productIds?: number[]): Promise<Map<number, number>> {
+  if (productIds && productIds.length === 0) return new Map();
+  const rows = await db
+    .select({ productId: orderItems.productId, held: sql<number>`sum(${orderItems.quantity})::int` })
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
-    .where(and(eq(orderItems.productId, productId), eq(orders.status, "pending")));
-  return row?.held ?? 0;
+    .where(
+      and(eq(orders.status, "pending"), productIds ? inArray(orderItems.productId, productIds) : undefined),
+    )
+    .groupBy(orderItems.productId);
+  return new Map(rows.map((r) => [r.productId, r.held]));
+}
+
+export type StockRow = {
+  id: number;
+  slug: string;
+  name: string;
+  imageUrl: string;
+  category: { id: number; name: string; parentName: string };
+  /** Available to sell now (product_stock.quantity); holds are already subtracted. */
+  quantity: number;
+  /** Units in open checkouts; they return to `quantity` if those checkouts don't complete. */
+  held: number;
+  /** quantity + held: what should physically be on the shelf. */
+  onHand: number;
+};
+
+/** Every product's stock for /admin/stock. `attention` keeps low and sold-out products only. */
+export async function listStock(filter: { categoryId?: number; attention?: boolean } = {}): Promise<StockRow[]> {
+  await assertAdmin();
+  const [rows, held] = await Promise.all([
+    db.query.products.findMany({
+      where: filter.categoryId ? eq(products.categoryId, filter.categoryId) : undefined,
+      columns: { id: true, slug: true, name: true, imageUrl: true },
+      with: { category: { with: { parent: true } }, stock: { columns: { quantity: true } } },
+      orderBy: [asc(products.name), asc(products.id)],
+    }),
+    heldByProduct(),
+  ]);
+  return rows
+    .map((p) => {
+      const quantity = p.stock?.quantity ?? 0;
+      const h = held.get(p.id) ?? 0;
+      return {
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        imageUrl: p.imageUrl,
+        category: { id: p.category.id, name: p.category.name, parentName: p.category.parent?.name ?? "" },
+        quantity,
+        held: h,
+        onHand: quantity + h,
+      };
+    })
+    .filter((r) => !filter.attention || r.quantity <= LOW_STOCK_THRESHOLD);
 }
 
 /** Products only ever belong to a sub-category; the browser's category id is never trusted. */
