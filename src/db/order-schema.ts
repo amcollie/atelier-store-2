@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { check, index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 
 import { user } from "./auth-schema";
 import { products } from "./catalog-schema";
@@ -81,6 +81,12 @@ export const orders = pgTable(
   (t) => [
     index("orders_user_created_idx").on(t.userId, t.createdAt.desc()),
     index("orders_status_reserved_idx").on(t.status, t.reservedUntil),
+    // At most one open (pending, unpaid) checkout per shopper. Without
+    // transactions, this is what stops two checkouts started together from
+    // both holding stock: the second insert fails instead.
+    uniqueIndex("orders_one_open_checkout_per_user")
+      .on(t.userId)
+      .where(sql`${t.status} = 'pending' AND ${t.paymentStatus} = 'unpaid'`),
     check("orders_currency_format", sql`${t.currency} ~ '^[a-z]{3}$'`),
     check("orders_amounts_non_negative", sql`${t.subtotalCents} >= 0 AND ${t.shippingCents} >= 0`),
     check("orders_total_matches", sql`${t.totalCents} = ${t.subtotalCents} + ${t.shippingCents}`),

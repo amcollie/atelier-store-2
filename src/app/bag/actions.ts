@@ -4,7 +4,7 @@ import {
   isValidSize,
   isValidSlug,
   lineKey,
-  loadLiveProducts,
+  loadBagProducts,
   MAX_LINE_QTY,
   MAX_LINES,
   readCartRefs,
@@ -57,7 +57,7 @@ export async function addToCart(_prev: CartActionState, formData: FormData): Pro
   if (!input || !qty) return error("We couldn't add that item. Refresh the page and try again.");
 
   const refs = await readCartRefs();
-  const live = await loadLiveProducts([input.slug, ...refs.map((r) => r.slug)]);
+  const live = await loadBagProducts([input.slug, ...refs.map((r) => r.slug)]);
   const product = live.get(input.slug);
   if (!product) return error("This item is no longer available.");
 
@@ -106,7 +106,7 @@ export async function updateQuantity(_prev: CartActionState, formData: FormData)
   if (qty === 0) return removeLine(input.slug, input.size);
 
   const refs = await readCartRefs();
-  const cart = resolveCart(refs, await loadLiveProducts(refs.map((r) => r.slug)));
+  const cart = resolveCart(refs, await loadBagProducts(refs.map((r) => r.slug)));
   const key = lineKey(input.slug, input.size);
   const line = cart.lines.find((l) => l.key === key);
   if (!line) return error("This item is no longer in your bag.");
@@ -128,7 +128,7 @@ export async function removeFromCart(_prev: CartActionState, formData: FormData)
 
 async function removeLine(slug: string, size: string | null): Promise<CartActionState> {
   const refs = await readCartRefs();
-  const cart = resolveCart(refs, await loadLiveProducts(refs.map((r) => r.slug)));
+  const cart = resolveCart(refs, await loadBagProducts(refs.map((r) => r.slug)));
   const key = lineKey(slug, size);
   await writeCartRefs(persistable(refs, cart).filter((r) => lineKey(r.slug, r.size) !== key));
   return ok("Item removed from your bag.");

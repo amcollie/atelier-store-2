@@ -1,14 +1,15 @@
 import "server-only";
 
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
 import { db } from "@/db";
-import { products } from "@/db/schema";
+import { orderItems, orders, products } from "@/db/schema";
 import type { Cart, CartIssue, CartLine, CartRef } from "@/lib/cart-types";
 import { LOW_STOCK_THRESHOLD } from "@/lib/catalog";
 import type { ProductSize } from "@/lib/catalog-types";
+import { getCurrentUser } from "@/lib/session";
 
 // The cart is an httpOnly cookie of { slug, size, qty } references. Prices,
 // names and stock are never stored there: every read resolves the lines
@@ -122,6 +123,36 @@ export async function loadLiveProducts(slugs: string[]): Promise<Map<string, Liv
 }
 
 /**
+ * Live products as this shopper's bag should see them. Units held by their own
+ * open (pending, unpaid) checkout are counted as available to them: starting
+ * checkout again releases that hold first, so they aren't "sold out" to the
+ * person holding them. Other shoppers' holds still count as taken. For the bag
+ * page and bag actions only; createPendingOrder runs after the release and
+ * uses loadLiveProducts.
+ */
+export async function loadBagProducts(slugs: string[]): Promise<Map<string, LiveProduct>> {
+  const [live, user] = await Promise.all([loadLiveProducts(slugs), getCurrentUser()]);
+  if (!user || live.size === 0) return live;
+  const ids = [...live.values()].map((p) => p.id);
+  const held = await db
+    .select({ productId: orderItems.productId, qty: sql<number>`sum(${orderItems.quantity})::int` })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .where(
+      and(
+        eq(orders.userId, user.id),
+        eq(orders.status, "pending"),
+        eq(orders.paymentStatus, "unpaid"),
+        inArray(orderItems.productId, ids),
+      ),
+    )
+    .groupBy(orderItems.productId);
+  if (held.length === 0) return live;
+  const byId = new Map(held.map((h) => [h.productId, h.qty]));
+  return new Map([...live].map(([slug, p]) => [slug, { ...p, stock: p.stock + (byId.get(p.id) ?? 0) }]));
+}
+
+/**
  * The size a line should carry for this product, or an error.
  * One-size and size-less products ignore whatever the client sent.
  */
@@ -194,5 +225,5 @@ export function resolveCart(refs: CartRef[], live: Map<string, LiveProduct>): Ca
 /** The current cart, resolved against live prices and stock. Cached per request (header and page share it). */
 export const getCart = cache(async (): Promise<Cart> => {
   const refs = await readCartRefs();
-  return resolveCart(refs, await loadLiveProducts(refs.map((r) => r.slug)));
+  return resolveCart(refs, await loadBagProducts(refs.map((r) => r.slug)));
 });

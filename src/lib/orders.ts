@@ -46,6 +46,8 @@ export type PendingOrder = { id: number; publicId: string; totalCents: number; l
 export type CreateOrderResult =
   | { ok: true; order: PendingOrder }
   | { ok: false; reason: "empty" | "out_of_stock" }
+  /** Another checkout of this shopper's is still being opened (another tab). */
+  | { ok: false; reason: "in_progress" }
   /** `refs` is the bag corrected to live stock, for the caller to save before the shopper reviews it. */
   | { ok: false; reason: "changed"; refs: CartRef[] };
 
@@ -140,6 +142,7 @@ export async function createPendingOrder(userId: string, refs: CartRef[]): Promi
     row = result.rows[0];
   } catch (error) {
     if (isConstraint(error, "product_stock_quantity_non_negative")) return { ok: false, reason: "out_of_stock" };
+    if (isConstraint(error, "orders_one_open_checkout_per_user")) return { ok: false, reason: "in_progress" };
     throw error;
   }
   if (!row) throw new Error("Order insert returned no row.");
@@ -154,12 +157,18 @@ export async function createPendingOrder(userId: string, refs: CartRef[]): Promi
   return { ok: true, order: { id: row.id, publicId, totalCents: subtotal, lines } };
 }
 
-/** Records the Checkout Session that pays for a pending order. */
-export async function attachCheckoutSession(orderId: number, session: Stripe.Checkout.Session): Promise<void> {
-  await db
+/**
+ * Records the Checkout Session that pays for a pending order. Returns false if
+ * the order is no longer pending (it was released while the session was being
+ * created): the caller must then not send the shopper to that session.
+ */
+export async function attachCheckoutSession(orderId: number, session: Stripe.Checkout.Session): Promise<boolean> {
+  const updated = await db
     .update(orders)
     .set({ stripeCheckoutSessionId: session.id, reservedUntil: new Date(session.expires_at * 1000) })
-    .where(and(eq(orders.id, orderId), eq(orders.status, "pending"), eq(orders.paymentStatus, "unpaid")));
+    .where(and(eq(orders.id, orderId), eq(orders.status, "pending"), eq(orders.paymentStatus, "unpaid")))
+    .returning({ id: orders.id });
+  return updated.length > 0;
 }
 
 type CancelReason = "failed" | "expired" | "canceled";
@@ -277,16 +286,27 @@ export async function syncOrderFromSession(
 }
 
 /**
- * Ends this shopper's earlier unpaid checkouts before starting a new one, so
- * one person never holds stock twice. Delayed payments in progress are kept.
+ * How long an order may sit without a Checkout Session before it counts as
+ * abandoned. Until then another request is probably still creating its session.
+ */
+const SESSIONLESS_GRACE_MS = 2 * 60 * 1000;
+
+/**
+ * Ends this shopper's earlier unpaid checkouts before starting a new one.
+ * Delayed payments in progress are kept. An order without a session that is
+ * younger than SESSIONLESS_GRACE_MS is left alone: another tab is opening it,
+ * and releasing it would send that tab to a session for a canceled order. The
+ * new order's insert then fails on orders_one_open_checkout_per_user, so one
+ * person never holds stock twice.
  */
 export async function releaseUserPendingOrders(userId: string): Promise<void> {
   const open = await db.query.orders.findMany({
     where: and(eq(orders.userId, userId), eq(orders.status, "pending"), eq(orders.paymentStatus, "unpaid")),
-    columns: { id: true, stripeCheckoutSessionId: true },
+    columns: { id: true, stripeCheckoutSessionId: true, createdAt: true },
   });
   for (const order of open) {
     if (!order.stripeCheckoutSessionId) {
+      if (Date.now() - order.createdAt.getTime() < SESSIONLESS_GRACE_MS) continue;
       await releaseOrder(order.id, "canceled");
       continue;
     }

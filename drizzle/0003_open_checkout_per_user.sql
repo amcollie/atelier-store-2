@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "orders_one_open_checkout_per_user" ON "orders" USING btree ("user_id") WHERE "orders"."status" = 'pending' AND "orders"."payment_status" = 'unpaid';

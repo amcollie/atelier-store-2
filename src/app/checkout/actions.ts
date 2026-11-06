@@ -36,6 +36,9 @@ export async function startCheckout(): Promise<CheckoutState> {
     if (!created.ok) {
       // Save the corrected quantities so the re-rendered bag shows exactly what checkout will charge.
       if (created.reason === "changed") await writeCartRefs(created.refs);
+      if (created.reason === "in_progress") {
+        return { error: "Checkout is already opening in another window. Continue there, or try again in a moment." };
+      }
       destination =
         created.reason === "empty"
           ? "/bag"
@@ -111,6 +114,14 @@ async function openSession(order: PendingOrder, email: string): Promise<string |
     return null;
   }
 
-  await attachCheckoutSession(order.id, session);
+  if (!(await attachCheckoutSession(order.id, session))) {
+    // The order was released while the session was being created, so its stock
+    // is back on sale. Never send the shopper to pay for it.
+    console.error(`[checkout] Order ${order.publicId} was released before its session was saved; expiring ${session.id}.`);
+    await getStripe()
+      .checkout.sessions.expire(session.id)
+      .catch((error) => console.error("[checkout] Expiring the orphaned session failed:", error));
+    return null;
+  }
   return session.url;
 }

@@ -66,7 +66,7 @@ With Cache Components on, product slugs come from `generateStaticParams`; an unk
 - **Prices:** the client sends only slug, size and quantity. Prices, line totals and the subtotal (integer cents) are always computed on the server from the database.
 - **Stock:** `product_stock` is per product, so all sizes of one product share it. `resolveCart()` fills lines in cart order and clamps them to live stock; each line gets an `issue` (`reduced`, `sold_out`, `size_unavailable`, `held_elsewhere`), and a line with `qty` 0 is left out of the subtotal but kept in the bag so the shopper can see and remove it. Rendering can't set cookies, so a clamped quantity is saved by the next cart action.
 - **Mutations:** `addToCart`, `updateQuantity` and `removeFromCart` in `src/app/bag/actions.ts`. Each re-reads the cookie, validates its input and re-checks stock before writing. Setting the cookie re-renders the route, which updates `/bag` and the header count.
-- **Stock holds:** the bag itself reserves nothing. Stock is held only from checkout start (see Checkout).
+- **Stock holds:** the bag itself reserves nothing. Stock is held only from checkout start (see Checkout). The bag page and bag actions load stock with `loadBagProducts`, which adds back units held by the signed-in shopper's own open (pending, unpaid) checkout, so returning from Stripe with Back doesn't show their own items as sold out or lower their quantity. Other shoppers' holds still count as taken. `createPendingOrder` uses plain `loadLiveProducts`, because it runs after that hold is released.
 
 ## Orders
 
@@ -90,6 +90,7 @@ Tables in `src/db/order-schema.ts` (migration `drizzle/0002_orders.sql`). Only `
 - **Writes:** neon-http has no interactive transactions, so status changes and stock moves are each one statement.
   - `createPendingOrder` inserts the order and its items and holds the stock in one CTE. `product_stock`'s `>= 0` check aborts it on oversell, which keeps concurrent buyers safe.
   - `releaseOrder` cancels a pending order and restocks in one CTE guarded by `status = 'pending'`, so replays release nothing.
+  - The partial unique index `orders_one_open_checkout_per_user` (migration `0003`) allows one pending, unpaid order per user. Two checkouts started together can't both hold stock: the second insert fails and `createPendingOrder` returns `in_progress`.
   - Stock changes call `refreshStockPages()` (`revalidateTag("catalog", { expire: 0 })`), so the first product-page view after a hold or release already shows the new availability. `"max"` would serve one stale view first.
 
 ## Checkout
@@ -101,7 +102,9 @@ Stripe Checkout (hosted), USD and US shipping only, with no tax (Stripe Tax need
     - requires a signed-in user;
     - settles stale holds and the shopper's earlier unpaid checkouts;
     - runs `createPendingOrder`, which re-resolves the bag cookie against live prices and stock. Any reduced or unavailable line returns `changed`, the corrected bag is saved, and the shopper is redirected to `/bag?checkout=changed` (or `?checkout=unavailable` when someone else took the last one) to review it. `/bag` shows one notice per `checkout` value, including `canceled`.
+  - `releaseUserPendingOrders` skips an order with no session that is younger than two minutes, because another tab is still creating its session; the new checkout then gets `in_progress` ("already opening in another window").
   - It then creates the Checkout Session with `price_data` built from the order's database prices and redirects to Stripe.
+  - `attachCheckoutSession` returns false if the order was released meanwhile. The action then expires that session and shows an error instead of redirecting, so a shopper is never sent to pay for a canceled order.
   - If session creation fails, the hold is released.
   - Sessions last 31 minutes, which is the stock hold.
 - **Prices:** never accept prices, totals or payment status from the client. Line items come from `order_items`. An order is marked paid only when Stripe's `amount_total` and `currency` equal the order's.
