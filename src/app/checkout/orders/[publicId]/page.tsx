@@ -67,7 +67,9 @@ function headline(order: OrderView): { eyebrow: string; title: string; body: str
       return {
         eyebrow: "Payment failed",
         title: "Your payment didn’t go through",
-        body: "You haven’t been charged. The pieces in this order have been released; your bag may still hold them.",
+        // Only a delayed (bank) payment ends as "failed" (a declined card stays on
+        // Stripe's page), and by then the return route took these pieces out of the bag.
+        body: "Your bank didn’t complete the payment, so you haven’t been charged and the pieces in this order have been released. To try again, add them to your bag and check out with another payment method.",
         tone: "stop",
       };
     case "expired":
@@ -140,12 +142,13 @@ async function Order({ publicId }: { publicId: string }) {
           </AwaitingConfirmation>
         ) : (
           <div className="mt-2 flex flex-wrap gap-3">
-            {h.tone === "stop" ? (
+            {/* A canceled or expired checkout left the bag as it was; a failed delayed payment didn't. */}
+            {h.tone === "stop" && order.paymentStatus !== "failed" ? (
               <Link href="/bag" className="btn btn-primary">
                 Return to bag
               </Link>
             ) : (
-              <Link href="/arrivals" className={h.tone === "ok" ? "btn btn-primary" : "btn btn-secondary"}>
+              <Link href="/arrivals" className={h.tone === "wait" ? "btn btn-secondary" : "btn btn-primary"}>
                 Continue shopping
               </Link>
             )}
