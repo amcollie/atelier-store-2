@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { type ReactNode, Suspense } from "react";
 
 import { AccountBodySkeleton, AccountShell } from "@/components/account-shell";
@@ -44,13 +43,7 @@ async function Details() {
         </dl>
       </section>
 
-      <p className="text-meta text-muted">
-        To change your name or email address,{" "}
-        <Link href="/contact" className="link text-ink">
-          contact client services
-        </Link>
-        .
-      </p>
+      <p className="text-meta text-muted">Your name and email address can&rsquo;t be changed online yet.</p>
     </div>
   );
 }

@@ -33,9 +33,6 @@ export default async function HomePage() {
               <Link href={hero.primary.href} className="btn btn-primary">
                 {hero.primary.label}
               </Link>
-              <Link href={hero.secondary.href} className="btn btn-secondary">
-                {hero.secondary.label}
-              </Link>
             </div>
           </div>
         </div>
@@ -48,7 +45,7 @@ export default async function HomePage() {
         </h2>
         <div className="grid gap-px bg-line md:grid-cols-2">
           {featuredCollections.map((c) => (
-            <Link key={c.slug} href={`/collections/${c.slug}`} className="group bg-paper">
+            <Link key={c.slug} href={c.href} className="group bg-paper">
               <div className="media-frame aspect-[4/5] lg:aspect-[3/4]">
                 <Image
                   src={c.image.src}
@@ -97,9 +94,6 @@ export default async function HomePage() {
               {editorial.title}
             </h2>
             <p className="text-lead max-w-prose">{editorial.body}</p>
-            <Link href={editorial.cta.href} className="btn btn-secondary mt-2 self-start">
-              {editorial.cta.label}
-            </Link>
           </div>
           <div className="col-span-4 grid grid-cols-2 gap-3 md:col-span-8 md:gap-6 lg:col-span-8">
             {editorial.images.map((img, i) => (
@@ -121,7 +115,7 @@ export default async function HomePage() {
         <ul className="scroll-row gap-3 px-gutter scroll-px-gutter md:grid md:grid-cols-3 md:gap-px md:bg-line md:px-0">
           {categoryTiles.map((c) => (
             <li key={c.slug} className="w-[78vw] bg-paper sm:w-[60vw] md:w-auto">
-              <Link href={`/collections/${c.slug}`} className="group block">
+              <Link href={c.href} className="group block">
                 <div className="media-frame">
                   <Image
                     src={c.image.src}
@@ -157,9 +151,6 @@ export default async function HomePage() {
               </div>
               <h3 className="eyebrow">{s.title}</h3>
               <p className="text-meta text-muted">{s.description}</p>
-              <Link href={s.href} className="btn btn-text text-ink">
-                {s.cta}
-              </Link>
             </li>
           ))}
         </ul>

@@ -52,13 +52,7 @@ async function Orders() {
           <OrderRow key={order.publicId} order={order} />
         ))}
       </ul>
-      <p className="text-meta text-muted">
-        Checkouts you left before paying aren&rsquo;t listed. Questions about an order?{" "}
-        <Link href="/contact" className="link text-ink">
-          Contact client services
-        </Link>
-        .
-      </p>
+      <p className="text-meta text-muted">Checkouts you left before paying aren&rsquo;t listed.</p>
     </section>
   );
 }

@@ -23,6 +23,8 @@ export const PRODUCT_LIMITS = {
   alt: 200,
   sizes: 12,
   sizeLabel: 12,
+  /** Stripe Checkout refuses a USD total under $0.50 (checked in the sandbox). */
+  minPriceCents: 50,
   maxPriceCents: 100_000_000, // $1,000,000
   maxStock: 99_999,
 } as const;
@@ -83,6 +85,10 @@ const price = z.string().transform((raw, ctx) => {
   }
   const [whole, fraction = ""] = value.split(".");
   const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  if (cents < PRODUCT_LIMITS.minPriceCents) {
+    ctx.addIssue({ code: "custom", message: "Use a price of at least $0.50, the smallest amount Stripe can charge." });
+    return z.NEVER;
+  }
   if (cents > PRODUCT_LIMITS.maxPriceCents) {
     ctx.addIssue({ code: "custom", message: "Use a price of $1,000,000 or less." });
     return z.NEVER;

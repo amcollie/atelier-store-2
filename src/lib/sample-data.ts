@@ -8,26 +8,29 @@ const unsplash = (id: string) =>
   `https://images.unsplash.com/photo-${id}?w=2400&q=80&fm=jpg`;
 export type Collection = {
   slug: string;
+  /** A real collection page: /collections/{top} or /collections/{top}/{sub}. */
+  href: string;
   name: string;
   description: string;
   image: ImageAsset;
 };
 
+// No service pages exist yet, so services are shown without a link.
 export type Service = {
   title: string;
   description: string;
-  cta: string;
-  href: string;
   image: ImageAsset;
 };
 
+// Every link must lead to a page that exists: top categories are
+// /collections/{top}, sub-categories /collections/{top}/{sub}.
 export const navigation = [
   { label: "Women", href: "/collections/women" },
   { label: "Men", href: "/collections/men" },
-  { label: "Bags", href: "/collections/bags" },
-  { label: "Shoes", href: "/collections/shoes" },
-  { label: "Accessories", href: "/collections/accessories" },
-  { label: "Gifts", href: "/collections/gifts" },
+  { label: "Unisex", href: "/collections/unisex" },
+  { label: "Bags", href: "/collections/women/bags" },
+  { label: "Shoes", href: "/collections/women/shoes" },
+  { label: "Accessories", href: "/collections/unisex/accessories" },
 ];
 
 export const hero = {
@@ -35,8 +38,7 @@ export const hero = {
   title: "The Quiet Season",
   description:
     "Tailoring cut close, knits worn loose, and colour kept to a whisper.",
-  primary: { label: "Shop the collection", href: "/collections/autumn-winter" },
-  secondary: { label: "Watch the film", href: "/stories/the-quiet-season" },
+  primary: { label: "Shop new arrivals", href: "/arrivals" },
   image: {
     src: unsplash("1539109136881-3be0616acf4b"),
     alt: "Model in a pale blue overcoat standing in a cathedral square",
@@ -46,6 +48,7 @@ export const hero = {
 export const featuredCollections: Collection[] = [
   {
     slug: "women",
+    href: "/collections/women",
     name: "Women",
     description: "Softened silhouettes and printed silks.",
     image: {
@@ -55,6 +58,7 @@ export const featuredCollections: Collection[] = [
   },
   {
     slug: "men",
+    href: "/collections/men",
     name: "Men",
     description: "Sharp tailoring for long days in the city.",
     image: {
@@ -68,7 +72,6 @@ export const editorial = {
   eyebrow: "The Story",
   title: "Made Slowly",
   body: "Every piece in the collection passes through a small workshop of makers, from the first pattern to the final hand-stitched edge. Fewer pieces, made to be kept.",
-  cta: { label: "Discover the craft", href: "/stories/made-slowly" },
   images: [
     {
       src: unsplash("1485968579580-b6d095142e6e"),
@@ -84,6 +87,7 @@ export const editorial = {
 export const categoryTiles: Collection[] = [
   {
     slug: "bags",
+    href: "/collections/women/bags",
     name: "Bags",
     description: "Top handles, shoulder bags and totes.",
     image: {
@@ -93,6 +97,7 @@ export const categoryTiles: Collection[] = [
   },
   {
     slug: "outerwear",
+    href: "/collections/men/outerwear",
     name: "Outerwear",
     description: "Leather, wool and technical layers.",
     image: {
@@ -102,6 +107,7 @@ export const categoryTiles: Collection[] = [
   },
   {
     slug: "jewelry",
+    href: "/collections/women/jewelry",
     name: "Jewelry",
     description: "Chains, pendants and pearls.",
     image: {
@@ -115,8 +121,6 @@ export const services: Service[] = [
   {
     title: "Book an appointment",
     description: "Shop in store with a personal advisor.",
-    cta: "Reserve a time",
-    href: "/services/appointments",
     image: {
       src: unsplash("1441984904996-e0b6ba687e04"),
       alt: "Boutique interior with clothing rails under pendant lights",
@@ -125,8 +129,6 @@ export const services: Service[] = [
   {
     title: "Personalization",
     description: "Initials and details, made to order.",
-    cta: "Explore options",
-    href: "/services/personalization",
     image: {
       src: unsplash("1558769132-cb1aea458c5e"),
       alt: "Neutral knitwear hanging on a rail beside dried grasses",
@@ -135,8 +137,6 @@ export const services: Service[] = [
   {
     title: "Find a store",
     description: "Visit us in person, wherever you are.",
-    cta: "Locate a boutique",
-    href: "/stores",
     image: {
       src: unsplash("1441986300917-64674bd600d8"),
       alt: "Shop interior with shelves of folded clothing",

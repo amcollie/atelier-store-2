@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type ReactNode, useEffect, useState } from "react";
 
-import { CloseIcon, MenuIcon, SearchIcon, UserIcon } from "@/components/icons";
+import { CloseIcon, MenuIcon, UserIcon } from "@/components/icons";
 
 type NavItem = { label: string; href: string };
 
@@ -58,9 +58,6 @@ export function SiteHeader({ navigation, bag }: { navigation: NavItem[]; bag: Re
         </Link>
 
         <div className="flex items-center justify-end -mr-2.5">
-          <Link href="/search" className="btn btn-icon" aria-label="Search">
-            <SearchIcon />
-          </Link>
           <Link href="/account" className="btn btn-icon hidden sm:inline-flex" aria-label="Account">
             <UserIcon />
           </Link>
@@ -86,12 +83,6 @@ export function SiteHeader({ navigation, bag }: { navigation: NavItem[]; bag: Re
           <div className="stack mt-8 gap-3">
             <Link href="/account" className="eyebrow link-quiet" onClick={() => setOpen(false)}>
               My account
-            </Link>
-            <Link href="/services/appointments" className="eyebrow link-quiet" onClick={() => setOpen(false)}>
-              Book an appointment
-            </Link>
-            <Link href="/contact" className="eyebrow link-quiet" onClick={() => setOpen(false)}>
-              Contact us
             </Link>
           </div>
         </nav>

@@ -126,21 +126,6 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
                 <p>{SHIPPING_COPY}</p>
               </Disclosure>
             </div>
-
-            <div className="stack gap-2 text-meta">
-              <p className="eyebrow">Need help?</p>
-              <p className="text-muted">
-                Our client advisors can answer questions about sizing, materials and delivery.
-              </p>
-              <div className="cluster gap-x-6 gap-y-2">
-                <Link href="/contact" className="link">
-                  Contact us
-                </Link>
-                <Link href="/services/appointments" className="link">
-                  Book an appointment
-                </Link>
-              </div>
-            </div>
           </div>
         </div>
       </div>

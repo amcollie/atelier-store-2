@@ -1,35 +1,4 @@
-import Link from "next/link";
-
 import { NewsletterForm } from "@/components/newsletter-form";
-
-const columns = [
-  {
-    title: "Client services",
-    links: [
-      { label: "Contact us", href: "/contact" },
-      { label: "Shipping", href: "/help/shipping" },
-      { label: "Returns", href: "/help/returns" },
-      { label: "FAQs", href: "/help" },
-    ],
-  },
-  {
-    title: "The house",
-    links: [
-      { label: "Our story", href: "/about" },
-      { label: "Craftsmanship", href: "/stories/made-slowly" },
-      { label: "Sustainability", href: "/sustainability" },
-      { label: "Careers", href: "/careers" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { label: "Privacy policy", href: "/legal/privacy" },
-      { label: "Terms of sale", href: "/legal/terms" },
-      { label: "Accessibility", href: "/accessibility" },
-    ],
-  },
-];
 
 export function SiteFooter() {
   return (
@@ -45,20 +14,6 @@ export function SiteFooter() {
       </section>
 
       <div className="container-page grid-page gap-y-10 pb-section hairline-top pt-12">
-        {columns.map((col) => (
-          <nav key={col.title} aria-label={col.title} className="col-span-2 stack gap-4 md:col-span-2 lg:col-span-3">
-            <h2 className="eyebrow text-muted">{col.title}</h2>
-            <ul className="stack gap-2 text-meta">
-              {col.links.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className="link-quiet">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        ))}
         <div className="col-span-2 stack gap-4 md:col-span-2 lg:col-span-3">
           <h2 className="eyebrow text-muted">Region</h2>
           <p className="text-meta">United States · English · USD</p>

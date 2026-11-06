@@ -75,15 +75,7 @@ export function AuthForm({ mode, callbackURL }: { mode: AuthMode; callbackURL: s
     if (code === "BANNED_USER") {
       return {
         focus: "form-error",
-        formError: (
-          <>
-            This account has been suspended.{" "}
-            <Link href="/contact" className="link">
-              Contact us
-            </Link>{" "}
-            if you think this is a mistake.
-          </>
-        ),
+        formError: "This account has been suspended.",
       };
     }
     return { formError: "Something went wrong on our side. Please try again in a moment.", focus: "form-error" };

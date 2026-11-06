@@ -67,10 +67,20 @@ export async function assertAdmin(): Promise<CurrentUser> {
   return user;
 }
 
-/** Only same-site paths: rejects absolute URLs, `//host` and `/\host` so callbackURL can't redirect off-site. */
+/**
+ * Only same-site paths, so callbackURL can't redirect off-site. Parses the
+ * value the way a browser does, because browsers drop tabs and newlines and
+ * read `\` as `/`: "/\t/evil.example" is really "//evil.example". Returns the
+ * parsed path, never the raw input.
+ */
 export function safeCallbackURL(value: unknown, fallback = "/account"): string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+  if (typeof value !== "string" || !value.startsWith("/")) return fallback;
+  const base = "http://same-site.invalid";
+  let url: URL;
+  try {
+    url = new URL(value, base);
+  } catch {
     return fallback;
   }
-  return value;
+  return url.origin === base ? url.pathname + url.search + url.hash : fallback;
 }

@@ -51,17 +51,6 @@ async function Overview() {
             Shop new arrivals
           </Link>
         </OverviewItem>
-        <OverviewItem
-          title="Client services"
-          description="Our client advisors can answer questions about sizing, materials and delivery."
-        >
-          <Link href="/contact" className="btn btn-text">
-            Contact us
-          </Link>
-          <Link href="/services/appointments" className="btn btn-text">
-            Book an appointment
-          </Link>
-        </OverviewItem>
       </ul>
     </div>
   );
