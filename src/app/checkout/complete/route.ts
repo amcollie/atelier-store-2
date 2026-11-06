@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import type { NextRequest } from "next/server";
 
-import { clearCart } from "@/lib/cart";
-import { findOrderBySession, syncOrderFromSession } from "@/lib/orders";
+import { lineKey, readCartRefs, writeCartRefs } from "@/lib/cart";
+import { findOrderBySession, getOrderCartLines, syncOrderFromSession } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
 import { getStripe } from "@/lib/stripe";
 
@@ -26,8 +26,13 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getStripe().checkout.sessions.retrieve(sessionId);
     await syncOrderFromSession(session);
-    // The shopper finished Stripe's form, so this bag became the order.
-    if (session.status === "complete") await clearCart();
+    // The shopper finished Stripe's form: take what they bought out of the bag,
+    // keeping anything added meanwhile (another tab) or beyond the order's quantity.
+    if (session.status === "complete") {
+      const bought = new Map((await getOrderCartLines(order.id)).map((l) => [lineKey(l.slug, l.size), l.qty]));
+      const refs = await readCartRefs();
+      await writeCartRefs(refs.map((r) => ({ ...r, qty: r.qty - (bought.get(lineKey(r.slug, r.size)) ?? 0) })));
+    }
   } catch (error) {
     // The webhook will still settle the order; the order page shows it as awaiting confirmation meanwhile.
     console.error(`[checkout] Could not confirm session ${sessionId} on return:`, error);

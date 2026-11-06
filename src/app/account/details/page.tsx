@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import { type ReactNode, Suspense } from "react";
 
 import { AccountBodySkeleton, AccountShell } from "@/components/account-shell";
+import { formatDate } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Account details", robots: { index: false } };
 
-const fullDate = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "long", year: "numeric" });
 
 export default function AccountDetailsPage() {
   return (
@@ -38,7 +38,7 @@ async function Details() {
           Account
         </h2>
         <dl className="divide-y divide-line border-y border-line text-meta">
-          <DetailRow label="Member since" value={fullDate.format(user.createdAt)} />
+          <DetailRow label="Member since" value={formatDate(user.createdAt)} />
           <DetailRow label="Sign-in method" value="Email and password" />
         </dl>
       </section>

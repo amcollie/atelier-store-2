@@ -143,10 +143,3 @@ export const services: Service[] = [
     },
   },
 ];
-
-const wholeDollars = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const withCents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
-
-/** "$480" for whole dollars, "$1,250.50" otherwise: never rounds, so the shown price is what Stripe charges. */
-export const formatPrice = (cents: number) =>
-  cents % 100 === 0 ? wholeDollars.format(cents / 100) : withCents.format(cents / 100);

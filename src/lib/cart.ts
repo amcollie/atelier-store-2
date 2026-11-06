@@ -1,14 +1,15 @@
 import "server-only";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
 import { db } from "@/db";
-import { orderItems, orders, products } from "@/db/schema";
+import { products } from "@/db/schema";
 import type { Cart, CartIssue, CartLine, CartRef } from "@/lib/cart-types";
 import { LOW_STOCK_THRESHOLD } from "@/lib/catalog";
 import type { ProductSize } from "@/lib/catalog-types";
+import { heldUnits } from "@/lib/held";
 import { getCurrentUser } from "@/lib/session";
 
 // The cart is an httpOnly cookie of { slug, size, qty } references. Prices,
@@ -65,7 +66,7 @@ export async function readCartRefs(): Promise<CartRef[]> {
   return parseCart((await cookies()).get(COOKIE)?.value);
 }
 
-/** Server actions only: Server Components can't set cookies. */
+/** Server actions and route handlers only: Server Components can't set cookies. */
 export async function writeCartRefs(refs: CartRef[]): Promise<void> {
   const store = await cookies();
   const lines = refs.filter((r) => r.qty > 0).slice(0, MAX_LINES);
@@ -131,25 +132,13 @@ export async function loadLiveProducts(slugs: string[]): Promise<Map<string, Liv
  * uses loadLiveProducts.
  */
 export async function loadBagProducts(slugs: string[]): Promise<Map<string, LiveProduct>> {
+  // An empty bag needs no session lookup (the header renders this on every page).
+  if (slugs.length === 0) return new Map();
   const [live, user] = await Promise.all([loadLiveProducts(slugs), getCurrentUser()]);
   if (!user || live.size === 0) return live;
-  const ids = [...live.values()].map((p) => p.id);
-  const held = await db
-    .select({ productId: orderItems.productId, qty: sql<number>`sum(${orderItems.quantity})::int` })
-    .from(orderItems)
-    .innerJoin(orders, eq(orders.id, orderItems.orderId))
-    .where(
-      and(
-        eq(orders.userId, user.id),
-        eq(orders.status, "pending"),
-        eq(orders.paymentStatus, "unpaid"),
-        inArray(orderItems.productId, ids),
-      ),
-    )
-    .groupBy(orderItems.productId);
-  if (held.length === 0) return live;
-  const byId = new Map(held.map((h) => [h.productId, h.qty]));
-  return new Map([...live].map(([slug, p]) => [slug, { ...p, stock: p.stock + (byId.get(p.id) ?? 0) }]));
+  const held = await heldUnits({ userId: user.id, productIds: [...live.values()].map((p) => p.id) });
+  if (held.size === 0) return live;
+  return new Map([...live].map(([slug, p]) => [slug, { ...p, stock: p.stock + (held.get(p.id) ?? 0) }]));
 }
 
 /**

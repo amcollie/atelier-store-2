@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { StockStatus } from "@/components/stock-status";
 import type { Product } from "@/lib/catalog-types";
-import { formatPrice } from "@/lib/sample-data";
+import { formatPrice } from "@/lib/format";
 
 export function ProductCard({ product }: { product: Product }) {
   const soldOut = product.stock.status === "out_of_stock";

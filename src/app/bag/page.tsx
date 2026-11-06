@@ -6,7 +6,7 @@ import { BagLines } from "@/components/bag-lines";
 import { CheckoutButton } from "@/components/checkout-button";
 import { getCart } from "@/lib/cart";
 import { SHIPPING_COPY } from "@/lib/catalog";
-import { formatPrice } from "@/lib/sample-data";
+import { formatPrice } from "@/lib/format";
 import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Shopping bag", robots: { index: false } };
@@ -51,11 +51,18 @@ async function BagContents({ searchParams }: { searchParams: PageProps<"/bag">["
       <p className="border-l-2 border-line-strong py-1 pl-4 text-meta" role="status">
         Checkout canceled. You haven&rsquo;t been charged, and your bag is just as you left it.
       </p>
-    ) : params.checkout === "changed" || params.checkout === "unavailable" ? (
+    ) : params.checkout === "cancel_failed" ? (
+      <p className="border-l-2 border-warning py-1 pl-4 text-meta text-warning" role="alert">
+        We couldn&rsquo;t cancel that checkout just now. You haven&rsquo;t been charged unless you paid; if you
+        didn&rsquo;t, it ends on its own within 30 minutes and your pieces are released.
+      </p>
+    ) : params.checkout === "changed" || params.checkout === "unavailable" || params.checkout === "prices" ? (
       <p className="border-l-2 border-warning py-1 pl-4 text-meta text-warning" role="alert">
         {params.checkout === "changed"
           ? "Stock changed before we could start checkout, so we’ve updated your bag to match. Review it, then check out again."
-          : "Someone just bought the last of an item in your bag. Review your bag, then check out again."}
+          : params.checkout === "prices"
+            ? "A price in your bag changed since you opened it. Review the new total, then check out again."
+            : "Someone just bought the last of an item in your bag. Review your bag, then check out again."}
       </p>
     ) : null;
 
@@ -145,7 +152,7 @@ async function BagContents({ searchParams }: { searchParams: PageProps<"/bag">["
                 <p className="text-meta text-warning">Remove unavailable items to check out.</p>
               </div>
             ) : user ? (
-              <CheckoutButton />
+              <CheckoutButton shownSubtotalCents={cart.subtotalCents} />
             ) : (
               <div className="stack gap-3">
                 <Link href={`/sign-in?callbackURL=${encodeURIComponent("/bag")}`} className="btn btn-primary btn-block">

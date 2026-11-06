@@ -184,10 +184,11 @@ export function parseSizeLabels(value: string): string[] {
 
 const productFields = {
   name: requiredText("Enter a product name.", PRODUCT_LIMITS.name),
-  categoryId: z.coerce
-    .number({ error: "Choose a sub-category." })
-    .int("Choose a sub-category.")
-    .positive("Choose a sub-category."),
+  categoryId: z
+    .string({ error: "Choose a sub-category." })
+    .regex(/^\d{1,9}$/, "Choose a sub-category.")
+    .transform(Number)
+    .pipe(z.number().positive("Choose a sub-category.")),
   price,
   badge: optionalText(PRODUCT_LIMITS.badge),
   styleCode: requiredText("Enter a style code.", PRODUCT_LIMITS.styleCode),
@@ -202,7 +203,7 @@ const productFields = {
 };
 
 export const updateProductSchema = z.object({
-  id: z.coerce.number().int().positive(),
+  id: formInteger.pipe(z.number().positive()),
   ...productFields,
 });
 

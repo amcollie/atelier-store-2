@@ -7,7 +7,7 @@ import { type MouseEvent, useActionState, useState } from "react";
 import { removeFromCart, updateQuantity } from "@/app/bag/actions";
 import { StockStatus } from "@/components/stock-status";
 import type { CartActionState, CartLine } from "@/lib/cart-types";
-import { formatPrice } from "@/lib/sample-data";
+import { formatPrice } from "@/lib/format";
 
 // Bag rows with a quantity stepper and remove. The buttons only send the slug,
 // size and requested quantity; the server re-checks stock and recomputes the

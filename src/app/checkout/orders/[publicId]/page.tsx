@@ -8,7 +8,7 @@ import { AwaitingConfirmation } from "@/components/awaiting-confirmation";
 import { PaymentStatusLabel } from "@/components/payment-status";
 import type { OrderView } from "@/lib/order-types";
 import { getOrderView } from "@/lib/orders";
-import { formatPrice } from "@/lib/sample-data";
+import { formatDate, formatPrice } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Your order", robots: { index: false } };
@@ -29,9 +29,16 @@ export default function OrderPage({ params }: PageProps<"/checkout/orders/[publi
   );
 }
 
-const fullDate = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "long", year: "numeric" });
 
 function headline(order: OrderView): { eyebrow: string; title: string; body: string; tone: "ok" | "wait" | "stop" } {
+  if (order.underReview) {
+    return {
+      eyebrow: "Under review",
+      title: "We’re checking this order",
+      body: "We received a payment for this order but couldn’t confirm it automatically, so a member of our team is reviewing it. There’s nothing you need to do.",
+      tone: "wait",
+    };
+  }
   if (order.status === "paid") {
     return {
       eyebrow: "Order confirmed",
@@ -49,9 +56,9 @@ function headline(order: OrderView): { eyebrow: string; title: string; body: str
           tone: "wait",
         }
       : {
-          eyebrow: "Awaiting confirmation",
-          title: "Confirming your payment",
-          body: "We’re waiting for our payment provider to confirm your payment. This usually takes a few seconds; your pieces are set aside meanwhile.",
+          eyebrow: "Awaiting payment",
+          title: "Waiting for your payment",
+          body: "If you’ve just paid, this page updates as soon as our payment provider confirms it. If you left checkout without paying, you haven’t been charged, and your pieces are released within 30 minutes or as soon as you cancel.",
           tone: "wait",
         };
   }
@@ -87,7 +94,7 @@ async function Order({ publicId }: { publicId: string }) {
 
   const h = headline(order);
   // Pending with no word from Stripe yet (a delayed bank payment shows "processing" instead).
-  const awaiting = order.status === "pending" && order.paymentStatus === "unpaid";
+  const awaiting = order.status === "pending" && order.paymentStatus === "unpaid" && !order.underReview;
   const address = order.shipping?.address;
   const itemCount = order.items.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -117,13 +124,17 @@ async function Order({ publicId }: { publicId: string }) {
           {h.eyebrow}
         </p>
         <h1 className="heading-display">{h.title}</h1>
-        {/* Always a live region, so the switch from "Confirming" to "Thank you" is announced when the page refreshes. */}
+        {/* Always a live region, so the switch from "Waiting for your payment" to "Thank you" is announced when the page refreshes. */}
         <p role="status" className="max-w-prose text-muted">
           {h.body}
         </p>
         {awaiting ? (
           <AwaitingConfirmation>
-            <Link href="/arrivals" className="btn btn-secondary">
+            {/* The cancel route checks with Stripe first: a session that was paid is shown as paid, not canceled. */}
+            <Link href={`/checkout/cancel?order=${order.publicId}`} className="btn btn-secondary" prefetch={false}>
+              Cancel checkout
+            </Link>
+            <Link href="/arrivals" className="btn btn-text">
               Continue shopping
             </Link>
           </AwaitingConfirmation>
@@ -190,10 +201,10 @@ async function Order({ publicId }: { publicId: string }) {
                 <Row label="Order number" value={<span className="break-all font-medium">{order.publicId}</span>} />
                 <Row
                   label="Status"
-                  value={<PaymentStatusLabel status={order.paymentStatus} />}
+                  value={<PaymentStatusLabel status={order.paymentStatus} underReview={order.underReview} />}
                 />
-                <Row label="Placed" value={fullDate.format(order.createdAt)} />
-                {order.paidAt ? <Row label="Paid" value={fullDate.format(order.paidAt)} /> : null}
+                <Row label="Placed" value={formatDate(order.createdAt)} />
+                {order.paidAt ? <Row label="Paid" value={formatDate(order.paidAt)} /> : null}
                 <Row label="Subtotal" value={formatPrice(order.subtotalCents)} />
                 <Row label="Shipping" value={order.shippingCents === 0 ? "Complimentary" : formatPrice(order.shippingCents)} />
                 <div className="flex justify-between gap-4 border-t border-line pt-3">

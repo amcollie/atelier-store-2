@@ -8,7 +8,7 @@ import { ProductGallery } from "@/components/product-gallery";
 import { ProductPurchase } from "@/components/product-purchase";
 import { StockStatus } from "@/components/stock-status";
 import { categoryHref, getProduct, getProductSlugs, getRelatedProducts, SHIPPING_COPY } from "@/lib/catalog";
-import { formatPrice } from "@/lib/sample-data";
+import { formatPrice } from "@/lib/format";
 
 export async function generateStaticParams() {
   const slugs = await getProductSlugs();

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AdminPage } from "@/components/admin/admin-page";
 import { type AdminProductRow, listCategoryOptions, listProducts } from "@/lib/admin/catalog";
 import { stockTone } from "@/lib/admin/stock-tone";
-import { formatPrice } from "@/lib/sample-data";
+import { formatPrice } from "@/lib/format";
 
 // Blocks on the role check; see src/app/admin/layout.tsx.
 export const instant = false;

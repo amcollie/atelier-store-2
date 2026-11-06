@@ -6,12 +6,11 @@ import { AccountBodySkeleton, AccountShell } from "@/components/account-shell";
 import { PaymentStatusLabel } from "@/components/payment-status";
 import type { OrderSummary } from "@/lib/order-types";
 import { listOrdersForUser } from "@/lib/orders";
-import { formatPrice } from "@/lib/sample-data";
+import { formatDate, formatPrice } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Orders", robots: { index: false } };
 
-const fullDate = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "long", year: "numeric" });
 
 
 export default function AccountOrdersPage() {
@@ -69,14 +68,14 @@ function OrderRow({ order }: { order: OrderSummary }) {
     <li className="grid gap-4 py-6 md:grid-cols-[1fr_auto] md:items-center md:gap-8">
       <div className="stack min-w-0 gap-2">
         <h3 className="eyebrow">
-          <time dateTime={order.createdAt.toISOString()}>{fullDate.format(order.createdAt)}</time>
+          <time dateTime={order.createdAt.toISOString()}>{formatDate(order.createdAt)}</time>
         </h3>
         {summary ? <p className="text-meta">{summary}</p> : null}
         <dl className="flex flex-wrap gap-x-6 gap-y-1 text-meta">
           <div className="flex gap-2">
             <dt className="sr-only">Payment status</dt>
             <dd>
-              <PaymentStatusLabel status={order.paymentStatus} />
+              <PaymentStatusLabel status={order.paymentStatus} underReview={order.underReview} />
             </dd>
           </div>
           <div className="flex gap-2">
@@ -96,7 +95,7 @@ function OrderRow({ order }: { order: OrderSummary }) {
       <Link
         href={`/checkout/orders/${order.publicId}`}
         className="btn btn-secondary self-start md:self-center"
-        aria-label={`View order ${order.publicId} from ${fullDate.format(order.createdAt)}`}
+        aria-label={`View order ${order.publicId} from ${formatDate(order.createdAt)}`}
       >
         View order
       </Link>

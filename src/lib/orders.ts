@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 
-import { and, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import { revalidateTag } from "next/cache";
 import type Stripe from "stripe";
 
@@ -48,6 +48,8 @@ export type CreateOrderResult =
   | { ok: false; reason: "empty" | "out_of_stock" }
   /** Another checkout of this shopper's is still being opened (another tab). */
   | { ok: false; reason: "in_progress" }
+  /** The bag's total differs from the one the shopper was shown (a price changed). */
+  | { ok: false; reason: "price_changed" }
   /** `refs` is the bag corrected to live stock, for the caller to save before the shopper reviews it. */
   | { ok: false; reason: "changed"; refs: CartRef[] };
 
@@ -68,7 +70,12 @@ function refreshStockPages() {
  * Revalidates the cart against live prices and stock, then records a pending
  * order and holds its stock. Prices and totals come only from Postgres.
  */
-export async function createPendingOrder(userId: string, refs: CartRef[]): Promise<CreateOrderResult> {
+export async function createPendingOrder(
+  userId: string,
+  refs: CartRef[],
+  /** The subtotal the bag page showed. Only compared, never charged: prices come from the database. */
+  shownSubtotalCents?: number,
+): Promise<CreateOrderResult> {
   const live = await loadLiveProducts(refs.map((r) => r.slug));
   const cart = resolveCart(refs, live);
   if (cart.lines.length === 0) return { ok: false, reason: "empty" };
@@ -98,6 +105,7 @@ export async function createPendingOrder(userId: string, refs: CartRef[]): Promi
     };
   });
   const subtotal = lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
+  if (shownSubtotalCents !== undefined && shownSubtotalCents !== subtotal) return { ok: false, reason: "price_changed" };
   const publicId = newPublicId();
 
   // Sizes share one stock count, so hold stock per product.
@@ -204,7 +212,26 @@ export async function releaseOrder(orderId: number, reason: CancelReason): Promi
   return released;
 }
 
-export type SyncOutcome = "paid" | "processing" | "released" | "unchanged" | "amount_mismatch";
+export type SyncOutcome = "paid" | "processing" | "released" | "unchanged" | "needs_review";
+
+/**
+ * Records that Stripe took money this order can't settle on its own, so it shows
+ * up for review on /admin/orders and the customer sees "under review". Only the
+ * first reason is kept.
+ */
+async function flagForReview(
+  orderId: number,
+  reason: "paid_after_cancel" | "amount_mismatch",
+  details: { stripePaymentIntentId: string | null; email: string | null; shipping: OrderShipping | null },
+  onlyIfStatus: "pending" | "canceled",
+): Promise<boolean> {
+  const flagged = await db
+    .update(orders)
+    .set({ ...details, reviewReason: reason, reviewFlaggedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(orders.id, orderId), eq(orders.status, onlyIfStatus), isNull(orders.reviewReason)))
+    .returning({ id: orders.id });
+  return flagged.length > 0;
+}
 
 /**
  * Applies a Checkout Session's state, as reported by Stripe, to its order.
@@ -257,11 +284,13 @@ export async function syncOrderFromSession(
   if (session.payment_status === "paid" || session.payment_status === "no_payment_required") {
     // Stripe must have charged exactly what we computed from our database.
     if (session.amount_total !== order.totalCents || session.currency !== order.currency) {
+      // Not marked paid. The hold stays until a person resolves it.
       console.error(
         `[orders] Amount mismatch on order ${order.publicId}: Stripe ${session.amount_total} ${session.currency}, ` +
-          `order ${order.totalCents} ${order.currency}. Left unpaid for review.`,
+          `order ${order.totalCents} ${order.currency}. Flagged for review.`,
       );
-      return result("amount_mismatch");
+      await flagForReview(order.id, "amount_mismatch", details, "pending");
+      return result("needs_review");
     }
     const updated = await db
       .update(orders)
@@ -269,9 +298,12 @@ export async function syncOrderFromSession(
       .where(and(eq(orders.id, order.id), eq(orders.status, "pending")))
       .returning({ id: orders.id });
     if (updated.length > 0) return result("paid");
-    if (order.status === "canceled") {
-      // The hold was released, yet Stripe took payment. Needs a person: refund or restock and fulfil.
-      console.error(`[orders] Payment received for canceled order ${order.publicId} (session ${session.id}).`);
+    // Not pending: already paid (a repeat event), or canceled. A canceled order's
+    // stock was released, yet Stripe took payment: a person must refund, or
+    // restock and fulfil.
+    if (await flagForReview(order.id, "paid_after_cancel", details, "canceled")) {
+      console.error(`[orders] Payment received for canceled order ${order.publicId} (session ${session.id}). Flagged for review.`);
+      return result("needs_review");
     }
     return result("unchanged");
   }
@@ -301,7 +333,13 @@ const SESSIONLESS_GRACE_MS = 2 * 60 * 1000;
  */
 export async function releaseUserPendingOrders(userId: string): Promise<void> {
   const open = await db.query.orders.findMany({
-    where: and(eq(orders.userId, userId), eq(orders.status, "pending"), eq(orders.paymentStatus, "unpaid")),
+    // Flagged orders were paid; a person settles them, so they're left alone.
+    where: and(
+      eq(orders.userId, userId),
+      eq(orders.status, "pending"),
+      eq(orders.paymentStatus, "unpaid"),
+      isNull(orders.reviewReason),
+    ),
     columns: { id: true, stripeCheckoutSessionId: true, createdAt: true },
   });
   for (const order of open) {
@@ -325,39 +363,85 @@ export async function expireAndSync(
 ): Promise<{ orderId: number; outcome: SyncOutcome } | null> {
   const stripe = getStripe();
   let session = await stripe.checkout.sessions.retrieve(sessionId);
+  let expiredByUs = false;
   if (session.status === "open") {
     try {
       session = await stripe.checkout.sessions.expire(sessionId);
-    } catch {
+      expiredByUs = true;
+    } catch (error) {
       session = await stripe.checkout.sessions.retrieve(sessionId);
+      // Still payable: never report it as canceled or release its stock.
+      if (session.status === "open") throw new Error(`Checkout Session ${sessionId} is still open; expiring it failed.`, { cause: error });
     }
   }
-  return syncOrderFromSession(session, options);
+  // "Canceled by the shopper" only if we ended it; one that timed out on its own is "expired".
+  return syncOrderFromSession(session, { canceledByShopper: options.canceledByShopper && expiredByUs });
 }
 
+const RECONCILE_EVERY_MS = 60 * 1000;
+let lastReconcile = 0;
+
 /**
- * Backstop for missed webhooks: settles unpaid orders whose hold lapsed more
- * than five minutes ago by asking Stripe for the session's real state.
+ * Backstop for missed webhooks, run after checkout starts (via after(), so it
+ * never slows the click) and at most once a minute per server instance. Asks
+ * Stripe for the real state of:
+ * - unpaid orders whose hold lapsed more than five minutes ago, or that never
+ *   got a session within ten minutes;
+ * - delayed payments still "processing" after a day, in case the
+ *   async_payment_succeeded/failed webhook never arrived.
+ * Orders flagged for review are skipped (a person settles them). Each row is
+ * handled on its own, so one Stripe error doesn't stop the rest, and every row
+ * checked gets `reconciled_at`, so rows that stay stuck go to the back of the queue.
  */
 export async function reconcileStaleOrders(limit = 10): Promise<void> {
-  const stale = await db.execute<{ id: number; session_id: string | null }>(sql`
-    SELECT id, stripe_checkout_session_id AS session_id FROM orders
-    WHERE status = 'pending' AND payment_status = 'unpaid'
+  if (Date.now() - lastReconcile < RECONCILE_EVERY_MS) return;
+  lastReconcile = Date.now();
+
+  const stale = await db.execute<{ id: number; payment_status: string; session_id: string | null }>(sql`
+    SELECT id, payment_status, stripe_checkout_session_id AS session_id FROM orders
+    WHERE status = 'pending' AND review_reason IS NULL
       AND (
-        (stripe_checkout_session_id IS NOT NULL AND reserved_until < now() - interval '5 minutes')
-        OR (stripe_checkout_session_id IS NULL AND created_at < now() - interval '10 minutes')
+        (payment_status = 'unpaid' AND stripe_checkout_session_id IS NOT NULL AND reserved_until < now() - interval '5 minutes')
+        OR (payment_status = 'unpaid' AND stripe_checkout_session_id IS NULL AND created_at < now() - interval '10 minutes')
+        OR (payment_status = 'processing' AND updated_at < now() - interval '1 day'
+            AND (reconciled_at IS NULL OR reconciled_at < now() - interval '6 hours'))
       )
-    ORDER BY created_at
+      AND (reconciled_at IS NULL OR reconciled_at < now() - interval '5 minutes')
+    ORDER BY reconciled_at NULLS FIRST, created_at
     LIMIT ${limit}
   `);
   for (const row of stale.rows) {
-    if (!row.session_id) {
-      await releaseOrder(row.id, "canceled");
-      continue;
+    try {
+      if (!row.session_id) {
+        await releaseOrder(row.id, "canceled");
+        continue;
+      }
+      const session = await getStripe().checkout.sessions.retrieve(row.session_id, { expand: ["payment_intent"] });
+      const intent = typeof session.payment_intent === "object" ? session.payment_intent : null;
+      // A delayed payment that failed leaves the session complete and unpaid; only the PaymentIntent says so.
+      const failed =
+        row.payment_status === "processing" &&
+        session.payment_status !== "paid" &&
+        (intent?.status === "requires_payment_method" || intent?.status === "canceled");
+      await syncOrderFromSession(session, { paymentFailed: failed });
+    } catch (error) {
+      console.error(`[orders] Reconciling order ${row.id} failed:`, error);
+    } finally {
+      // Raw SQL so updated_at (which the "processing for a day" rule reads) isn't touched.
+      await db
+        .execute(sql`UPDATE orders SET reconciled_at = now() WHERE id = ${row.id}`)
+        .catch((error) => console.error(`[orders] Recording reconcile of order ${row.id} failed:`, error));
     }
-    const session = await getStripe().checkout.sessions.retrieve(row.session_id);
-    await syncOrderFromSession(session);
   }
+}
+
+/** The order's lines as cart references, to take them out of the bag after a completed checkout. */
+export async function getOrderCartLines(orderId: number): Promise<CartRef[]> {
+  const rows = await db.query.orderItems.findMany({
+    where: (i, { eq }) => eq(i.orderId, orderId),
+    columns: { productSlug: true, size: true, quantity: true },
+  });
+  return rows.map((r) => ({ slug: r.productSlug, size: r.size, qty: r.quantity }));
 }
 
 export async function findOrderBySession(sessionId: string) {
@@ -383,14 +467,19 @@ export async function findOrderForUser(publicId: string, userId: string) {
  */
 export async function listOrdersForUser(userId: string, limit = 50): Promise<OrderSummary[]> {
   const rows = await db.query.orders.findMany({
-    where: and(eq(orders.userId, userId), notInArray(orders.paymentStatus, ["canceled", "expired"])),
+    // A flagged order is listed even if canceled: Stripe took money for it.
+    where: and(
+      eq(orders.userId, userId),
+      or(notInArray(orders.paymentStatus, ["canceled", "expired"]), isNotNull(orders.reviewReason)),
+    ),
     orderBy: [desc(orders.createdAt), desc(orders.id)],
     limit,
-    columns: { publicId: true, status: true, paymentStatus: true, totalCents: true, createdAt: true },
+    columns: { publicId: true, status: true, paymentStatus: true, totalCents: true, createdAt: true, reviewReason: true },
     with: { items: { columns: { productName: true, quantity: true }, orderBy: (i, { asc }) => [asc(i.id)] } },
   });
-  return rows.map(({ items, ...order }) => ({
+  return rows.map(({ items, reviewReason, ...order }) => ({
     ...order,
+    underReview: reviewReason !== null,
     itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
     lineCount: items.length,
     firstItemName: items[0]?.productName ?? null,
@@ -415,6 +504,7 @@ export async function getOrderView(publicId: string, userId: string): Promise<Or
     shipping: order.shipping,
     createdAt: order.createdAt,
     paidAt: order.paidAt,
+    underReview: order.reviewReason !== null,
     items: order.items.map((i) => ({
       slug: i.productSlug,
       name: i.productName,

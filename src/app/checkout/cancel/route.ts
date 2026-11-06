@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(publicId)) redirect("/bag");
 
   const user = await getCurrentUser();
-  if (!user) redirect(`/sign-in?callbackURL=${encodeURIComponent("/bag")}`);
+  // Come back here after signing in, so the checkout is still canceled and its stock released.
+  if (!user) redirect(`/sign-in?callbackURL=${encodeURIComponent(`/checkout/cancel?order=${publicId}`)}`);
 
   const order = await findOrderForUser(publicId, user.id);
   if (!order) return new Response("Not found", { status: 404 });
@@ -30,8 +31,10 @@ export async function GET(request: NextRequest) {
       await releaseOrder(order.id, "canceled");
     }
   } catch (error) {
-    // The session still expires on its own and the webhook or reconciliation returns the stock.
+    // Don't say "canceled": the session may still be payable. It expires on its
+    // own, and the webhook or reconciliation then returns the stock.
     console.error(`[checkout] Could not cancel order ${order.publicId}:`, error);
+    redirect("/bag?checkout=cancel_failed");
   }
 
   // If the session completed before we could expire it (e.g. paid in another tab), show the order instead.

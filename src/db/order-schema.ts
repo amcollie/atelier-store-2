@@ -18,6 +18,12 @@ import { products } from "./catalog-schema";
 
 export const orderStatus = pgEnum("order_status", ["pending", "paid", "canceled"]);
 
+/**
+ * Why Stripe took money that couldn't settle the order on its own, for a person
+ * to resolve (refund, or restock and fulfil). Null for every normal order.
+ */
+export const orderReviewReason = pgEnum("order_review_reason", ["paid_after_cancel", "amount_mismatch"]);
+
 export const paymentStatus = pgEnum("payment_status", [
   "unpaid",
   "processing",
@@ -68,6 +74,11 @@ export const orders = pgTable(
     email: text(),
     shipping: jsonb().$type<OrderShipping>(),
 
+    reviewReason: orderReviewReason("review_reason"),
+    reviewFlaggedAt: timestamp("review_flagged_at", { withTimezone: true }),
+    /** Last time reconcileStaleOrders asked Stripe about this order, so it rotates through stuck rows. */
+    reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
+
     /** When the stock hold lapses: the Checkout Session's expires_at. */
     reservedUntil: timestamp("reserved_until", { withTimezone: true }),
     paidAt: timestamp("paid_at", { withTimezone: true }),
@@ -83,10 +94,11 @@ export const orders = pgTable(
     index("orders_status_reserved_idx").on(t.status, t.reservedUntil),
     // At most one open (pending, unpaid) checkout per shopper. Without
     // transactions, this is what stops two checkouts started together from
-    // both holding stock: the second insert fails instead.
+    // both holding stock: the second insert fails instead. Orders flagged for
+    // review don't count, so a stuck payment never blocks the shopper.
     uniqueIndex("orders_one_open_checkout_per_user")
       .on(t.userId)
-      .where(sql`${t.status} = 'pending' AND ${t.paymentStatus} = 'unpaid'`),
+      .where(sql`${t.status} = 'pending' AND ${t.paymentStatus} = 'unpaid' AND ${t.reviewReason} IS NULL`),
     check("orders_currency_format", sql`${t.currency} ~ '^[a-z]{3}$'`),
     check("orders_amounts_non_negative", sql`${t.subtotalCents} >= 0 AND ${t.shippingCents} >= 0`),
     check("orders_total_matches", sql`${t.totalCents} = ${t.subtotalCents} + ${t.shippingCents}`),
@@ -106,6 +118,7 @@ export const orders = pgTable(
     ),
     check("orders_paid_at_set", sql`(${t.status} = 'paid') = (${t.paidAt} IS NOT NULL)`),
     check("orders_canceled_at_set", sql`(${t.status} = 'canceled') = (${t.canceledAt} IS NOT NULL)`),
+    check("orders_review_flag_set", sql`(${t.reviewReason} IS NULL) = (${t.reviewFlaggedAt} IS NULL)`),
   ],
 );
 

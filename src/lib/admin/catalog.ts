@@ -1,11 +1,12 @@
 import "server-only";
 
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { isConstraint } from "@/db/errors";
-import { categories, orderItems, orders, products, productStock } from "@/db/schema";
+import { categories, products, productStock } from "@/db/schema";
 import type { ImageAsset, ProductSize } from "@/lib/catalog-types";
+import { heldUnits } from "@/lib/held";
 import { assertAdmin } from "@/lib/session";
 
 import { LOW_STOCK_THRESHOLD } from "./stock-tone";
@@ -96,27 +97,9 @@ export async function getProductForEdit(id: number): Promise<ProductForEdit | un
     gallery: p.gallery,
     sizes: p.sizes,
     quantity: p.stock?.quantity ?? 0,
-    held: (await heldByProduct([p.id])).get(p.id) ?? 0,
+    held: (await heldUnits({ productIds: [p.id] })).get(p.id) ?? 0,
     updatedAt: p.updatedAt,
   };
-}
-
-/**
- * Units in open checkouts per product, in one grouped query (pending orders
- * hold their stock until paid, failed or expired). Without `productIds` it
- * covers every product. Products with nothing held are absent from the map.
- */
-async function heldByProduct(productIds?: number[]): Promise<Map<number, number>> {
-  if (productIds && productIds.length === 0) return new Map();
-  const rows = await db
-    .select({ productId: orderItems.productId, held: sql<number>`sum(${orderItems.quantity})::int` })
-    .from(orderItems)
-    .innerJoin(orders, eq(orders.id, orderItems.orderId))
-    .where(
-      and(eq(orders.status, "pending"), productIds ? inArray(orderItems.productId, productIds) : undefined),
-    )
-    .groupBy(orderItems.productId);
-  return new Map(rows.map((r) => [r.productId, r.held]));
 }
 
 export type StockRow = {
@@ -143,7 +126,7 @@ export async function listStock(filter: { categoryId?: number; attention?: boole
       with: { category: { with: { parent: true } }, stock: { columns: { quantity: true } } },
       orderBy: [asc(products.name), asc(products.id)],
     }),
-    heldByProduct(),
+    heldUnits(),
   ]);
   return rows
     .map((p) => {

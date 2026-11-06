@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { readCartRefs, writeCartRefs } from "@/lib/cart";
 import {
@@ -21,18 +22,26 @@ export type CheckoutState = { error?: string };
 
 const HOLD_SECONDS = 31 * 60; // Stripe's minimum session life is 30 minutes.
 
-export async function startCheckout(): Promise<CheckoutState> {
+/** The subtotal the bag showed, in cents: digits only, else ignored. Compared with the database total, never charged. */
+function readShownSubtotal(formData: FormData): number | undefined {
+  const raw = formData.get("shownSubtotalCents");
+  return typeof raw === "string" && /^\d{1,10}$/.test(raw) ? Number(raw) : undefined;
+}
+
+export async function startCheckout(_prev: CheckoutState, formData: FormData): Promise<CheckoutState> {
   const user = await requireUser("/bag");
+  // Settle other lapsed holds whose webhooks never arrived, after the response,
+  // so it never slows this click. Throttled inside.
+  after(() => reconcileStaleOrders().catch((error) => console.error("[checkout] Reconcile failed:", error)));
 
   // Where to go next: Stripe on success, or back to the bag with a notice when
   // the bag no longer matches stock. redirect() throws, so it runs after the try.
   let destination: string;
   try {
-    // Settle lapsed holds whose expiry webhook never arrived, then this shopper's earlier unpaid checkouts.
-    await reconcileStaleOrders().catch((error) => console.error("[checkout] Reconcile failed:", error));
+    // End this shopper's earlier unpaid checkouts first.
     await releaseUserPendingOrders(user.id);
 
-    const created = await createPendingOrder(user.id, await readCartRefs());
+    const created = await createPendingOrder(user.id, await readCartRefs(), readShownSubtotal(formData));
     if (!created.ok) {
       // Save the corrected quantities so the re-rendered bag shows exactly what checkout will charge.
       if (created.reason === "changed") await writeCartRefs(created.refs);
@@ -44,7 +53,9 @@ export async function startCheckout(): Promise<CheckoutState> {
           ? "/bag"
           : created.reason === "changed"
             ? "/bag?checkout=changed"
-            : "/bag?checkout=unavailable";
+            : created.reason === "price_changed"
+              ? "/bag?checkout=prices"
+              : "/bag?checkout=unavailable";
     } else {
       const url = await openSession(created.order, user.email);
       if (!url) return { error: "We couldn’t start checkout. Please try again in a moment." };
@@ -114,14 +125,28 @@ async function openSession(order: PendingOrder, email: string): Promise<string |
     return null;
   }
 
-  if (!(await attachCheckoutSession(order.id, session))) {
+  let attached: boolean;
+  try {
+    attached = await attachCheckoutSession(order.id, session);
+  } catch (error) {
+    // Couldn't save the session: don't leave it payable or the stock held.
+    console.error(`[checkout] Saving session ${session.id} for order ${order.publicId} failed:`, error);
+    await expireOrphan(session.id);
+    await releaseOrder(order.id, "canceled").catch((e) => console.error("[checkout] Releasing the order failed:", e));
+    return null;
+  }
+  if (!attached) {
     // The order was released while the session was being created, so its stock
     // is back on sale. Never send the shopper to pay for it.
     console.error(`[checkout] Order ${order.publicId} was released before its session was saved; expiring ${session.id}.`);
-    await getStripe()
-      .checkout.sessions.expire(session.id)
-      .catch((error) => console.error("[checkout] Expiring the orphaned session failed:", error));
+    await expireOrphan(session.id);
     return null;
   }
   return session.url;
+}
+
+async function expireOrphan(sessionId: string) {
+  await getStripe()
+    .checkout.sessions.expire(sessionId)
+    .catch((error) => console.error(`[checkout] Expiring session ${sessionId} failed:`, error));
 }
